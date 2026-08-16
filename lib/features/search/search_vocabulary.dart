@@ -1,0 +1,356 @@
+class SearchVocabulary {
+  SearchVocabulary._();
+
+  static final RegExp _arabicMarks = RegExp(r'[\u064B-\u065F\u0670]');
+  static final RegExp _separators =
+      RegExp(r'[^a-z0-9\u0600-\u06FF]+');
+
+  static const Set<String> _stopWords = {
+    'a',
+    'an',
+    'the',
+    'image',
+    'images',
+    'photo',
+    'photos',
+    'show',
+    'find',
+    'at',
+    'in',
+    'on',
+    'of',
+    'with',
+    'ابحث',
+    'اعرض',
+    'اريد',
+    'بدي',
+    'صوره',
+    'صور',
+    'في',
+    'فيها',
+    'فيه',
+    'عن',
+    'من',
+    'مع',
+    'لي',
+    'علي',
+  };
+
+  static const Map<String, String> _phraseAliases = {
+    'دراجه ناريه': 'motorcycle',
+    'حمار وحشي': 'zebra',
+    'حقيبه سفر': 'suitcase',
+    'طايره ورقيه': 'kite',
+    'لوح تزلج': 'skateboard',
+    'فرشاه اسنان': 'toothbrush',
+    'لقطه شاشه': 'screenshot',
+    'كانون الثاني': 'january',
+    'كانون الاول': 'december',
+    'تشرين الاول': 'october',
+    'تشرين الثاني': 'november',
+  };
+
+  // Arabic and common English variants are reduced to the labels emitted by
+  // YOLO/ML Kit. This keeps search deterministic without a cloud translation
+  // service or an embedding model.
+  static const Map<String, String> _aliases = {
+    'people': 'person',
+    'persons': 'person',
+    'شخص': 'person',
+    'اشخاص': 'person',
+    'ناس': 'person',
+    'رجل': 'person',
+    'امراه': 'person',
+    'طفل': 'person',
+    'اطفال': 'person',
+    'bike': 'bicycle',
+    'bikes': 'bicycle',
+    'دراجه': 'bicycle',
+    'دراجات': 'bicycle',
+    'cars': 'car',
+    'auto': 'car',
+    'سياره': 'car',
+    'سيارات': 'car',
+    'عربيه': 'car',
+    'motorbike': 'motorcycle',
+    'دراجه ناريه': 'motorcycle',
+    'موتور': 'motorcycle',
+    'plane': 'airplane',
+    'طايره': 'airplane',
+    'طايرات': 'airplane',
+    'باص': 'bus',
+    'حافله': 'bus',
+    'قطار': 'train',
+    'شاحنه': 'truck',
+    'شاحنات': 'truck',
+    'قارب': 'boat',
+    'سفينه': 'boat',
+    'اشاره': 'traffic',
+    'مقعد': 'bench',
+    'birds': 'bird',
+    'طير': 'bird',
+    'طاير': 'bird',
+    'طيور': 'bird',
+    'cats': 'cat',
+    'قط': 'cat',
+    'قطه': 'cat',
+    'قطط': 'cat',
+    'dogs': 'dog',
+    'كلب': 'dog',
+    'كلاب': 'dog',
+    'حصان': 'horse',
+    'خيول': 'horse',
+    'خروف': 'sheep',
+    'اغنام': 'sheep',
+    'بقره': 'cow',
+    'ابقار': 'cow',
+    'فيل': 'elephant',
+    'دب': 'bear',
+    'حمار وحشي': 'zebra',
+    'زرافه': 'giraffe',
+    'حقيبه': 'backpack',
+    'شنطه': 'backpack',
+    'مظله': 'umbrella',
+    'ربطه': 'tie',
+    'حقيبه سفر': 'suitcase',
+    'تزلج': 'skis',
+    'كره': 'ball',
+    'طايره ورقيه': 'kite',
+    'سكيت': 'skateboard',
+    'لوح تزلج': 'skateboard',
+    'ركمجه': 'surfboard',
+    'تنس': 'tennis',
+    'زجاجه': 'bottle',
+    'قنينه': 'bottle',
+    'كاس': 'cup',
+    'كوب': 'cup',
+    'شوكه': 'fork',
+    'سكين': 'knife',
+    'ملعقه': 'spoon',
+    'صحن': 'bowl',
+    'وعاء': 'bowl',
+    'موز': 'banana',
+    'تفاح': 'apple',
+    'ساندويش': 'sandwich',
+    'برتقال': 'orange',
+    'بروكلي': 'broccoli',
+    'جزر': 'carrot',
+    'بيتزا': 'pizza',
+    'دونات': 'donut',
+    'كيك': 'cake',
+    'كعكه': 'cake',
+    'كرسي': 'chair',
+    'chairs': 'chair',
+    'كنبه': 'couch',
+    'اريكه': 'couch',
+    'نبات': 'plant',
+    'نباتات': 'plant',
+    'سرير': 'bed',
+    'طاوله': 'table',
+    'مرحاض': 'toilet',
+    'تلفزيون': 'tv',
+    'شاشه': 'screen',
+    'حاسوب': 'laptop',
+    'لابتوب': 'laptop',
+    'فاره': 'mouse',
+    'ريموت': 'remote',
+    'كيبورد': 'keyboard',
+    'هاتف': 'phone',
+    'موبايل': 'phone',
+    'جوال': 'phone',
+    'مايكرويف': 'microwave',
+    'فرن': 'oven',
+    'مغسله': 'sink',
+    'ثلاجه': 'refrigerator',
+    'كتاب': 'book',
+    'كتب': 'book',
+    'ساعه': 'clock',
+    'مزهريه': 'vase',
+    'مقص': 'scissors',
+    'دبدوب': 'teddy bear',
+    'فرشاه اسنان': 'toothbrush',
+    'بحر': 'sea',
+    'محيط': 'sea',
+    'مي': 'water',
+    'ماء': 'water',
+    'شاطي': 'beach',
+    'جبل': 'mountain',
+    'جبال': 'mountain',
+    'سماء': 'sky',
+    'غيم': 'cloud',
+    'غيوم': 'cloud',
+    'طبيعه': 'nature',
+    'شجر': 'tree',
+    'اشجار': 'tree',
+    'طعام': 'food',
+    'اكل': 'food',
+    'مطعم': 'restaurant',
+    'طريق': 'road',
+    'شارع': 'road',
+    'مبني': 'building',
+    'بناء': 'building',
+    'منزل': 'house',
+    'بيت': 'house',
+    'ليل': 'night',
+    'غروب': 'sunset',
+    'وثيقه': 'document',
+    'مستند': 'document',
+    'فاتوره': 'document',
+    'ايصال': 'document',
+    'سكرينشوت': 'screenshot',
+    'لقطه شاشه': 'screenshot',
+    'احمر': 'red',
+    'حمراء': 'red',
+    'red': 'red',
+    'ازرق': 'blue',
+    'زرقاء': 'blue',
+    'اخضر': 'green',
+    'خضراء': 'green',
+    'اصفر': 'yellow',
+    'صفراء': 'yellow',
+    'برتقالي': 'orange color',
+    'بنفسجي': 'purple',
+    'زهري': 'pink',
+    'وردي': 'pink',
+    'اسود': 'black',
+    'سوداء': 'black',
+    'ابيض': 'white',
+    'بيضاء': 'white',
+    'رمادي': 'gray',
+    'بني': 'brown',
+    'كانون': 'january',
+    'يناير': 'january',
+    'شباط': 'february',
+    'فبراير': 'february',
+    'اذار': 'march',
+    'مارس': 'march',
+    'نيسان': 'april',
+    'ابريل': 'april',
+    'ايار': 'may',
+    'مايو': 'may',
+    'حزيران': 'june',
+    'يونيو': 'june',
+    'تموز': 'july',
+    'يوليو': 'july',
+    'اب': 'august',
+    'اغسطس': 'august',
+    'ايلول': 'september',
+    'سبتمبر': 'september',
+    'تشرين': 'october',
+    'اكتوبر': 'october',
+    'نوفمبر': 'november',
+    'ديسمبر': 'december',
+  };
+
+  static const Map<String, String> _arabicDisplay = {
+    'person': 'شخص',
+    'bicycle': 'دراجة',
+    'car': 'سيارة',
+    'motorcycle': 'دراجة نارية',
+    'airplane': 'طائرة',
+    'bus': 'حافلة',
+    'train': 'قطار',
+    'truck': 'شاحنة',
+    'boat': 'قارب',
+    'bird': 'طائر',
+    'cat': 'قطة',
+    'dog': 'كلب',
+    'horse': 'حصان',
+    'sheep': 'خروف',
+    'cow': 'بقرة',
+    'elephant': 'فيل',
+    'bear': 'دب',
+    'zebra': 'حمار وحشي',
+    'giraffe': 'زرافة',
+    'backpack': 'حقيبة',
+    'umbrella': 'مظلة',
+    'bottle': 'زجاجة',
+    'cup': 'كوب',
+    'banana': 'موز',
+    'apple': 'تفاح',
+    'pizza': 'بيتزا',
+    'cake': 'كيك',
+    'chair': 'كرسي',
+    'couch': 'كنبة',
+    'bed': 'سرير',
+    'tv': 'تلفاز',
+    'laptop': 'حاسوب',
+    'phone': 'هاتف',
+    'book': 'كتاب',
+    'clock': 'ساعة',
+    'sea': 'بحر',
+    'water': 'ماء',
+    'beach': 'شاطئ',
+    'mountain': 'جبل',
+    'sky': 'سماء',
+    'cloud': 'غيوم',
+    'nature': 'طبيعة',
+    'food': 'طعام',
+    'road': 'طريق',
+    'building': 'مبنى',
+    'night': 'ليل',
+    'document': 'مستند',
+    'screen': 'شاشة',
+    'red': 'أحمر',
+    'blue': 'أزرق',
+    'green': 'أخضر',
+    'yellow': 'أصفر',
+    'orange color': 'برتقالي',
+    'purple': 'بنفسجي',
+    'pink': 'وردي',
+    'black': 'أسود',
+    'white': 'أبيض',
+    'gray': 'رمادي',
+    'brown': 'بني',
+  };
+
+  static String normalize(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll(_arabicMarks, '')
+        .replaceAll(RegExp(r'[أإآٱ]'), 'ا')
+        .replaceAll('ؤ', 'و')
+        .replaceAll('ئ', 'ي')
+        .replaceAll('ى', 'ي')
+        .replaceAll('ة', 'ه')
+        .replaceAll(_separators, ' ')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  static List<String> queryTerms(String query) {
+    var normalized = normalize(query);
+    if (normalized.isEmpty) return const [];
+
+    var phraseAware = ' $normalized ';
+    for (final entry in _phraseAliases.entries) {
+      phraseAware = phraseAware.replaceAll(
+        ' ${entry.key} ',
+        ' ${entry.value.replaceAll(' ', '_')} ',
+      );
+    }
+    normalized = phraseAware.trim();
+
+    final tokens = normalized.split(' ');
+    final terms = <String>[];
+    for (final token in tokens) {
+      if (token.isEmpty || _stopWords.contains(token)) continue;
+      final withoutArticle = token.startsWith('ال') && token.length > 3
+          ? token.substring(2)
+          : token;
+      final canonical = (_aliases[token] ??
+              _aliases[withoutArticle] ??
+              token)
+          .replaceAll('_', ' ');
+      if (canonical.isNotEmpty && !terms.contains(canonical)) {
+        terms.add(canonical);
+      }
+    }
+    return terms;
+  }
+
+  static String arabicName(String label) {
+    final canonical = _aliases[normalize(label)] ?? normalize(label);
+    return _arabicDisplay[canonical] ?? label;
+  }
+}
