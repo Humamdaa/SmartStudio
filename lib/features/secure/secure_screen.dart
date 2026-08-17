@@ -6,6 +6,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_sizes.dart';
 import '../../core/providers/gallery_refresh_provider.dart';
@@ -164,6 +165,22 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
   bool _loading = false;
   String? _error;
 
+  /// First of the two entries while choosing a new PIN.
+  String? _firstEntry;
+  bool _pinExists = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPinState();
+  }
+
+  Future<void> _loadPinState() async {
+    final stored = await _storage.read(key: _pinKey);
+    if (!mounted) return;
+    setState(() => _pinExists = stored != null);
+  }
+
   // ── Biometric ────────────────────────────────────────────────
   Future<void> _biometric() async {
     setState(() { _loading = true; _error = null; });
@@ -198,8 +215,30 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
     final stored = await _storage.read(key: _pinKey);
 
     if (stored == null) {
-      // أول مرة — احفظ الـ PIN
+      // إنشاء رقم جديد — منطلبه مرتين قبل ما نحفظ أي شي. النسخة القديمة كانت
+      // تحفظ أول ستة أرقام تُكتب بصمت، فرقم مكتوب بحكم العادة أو بالخطأ يصير
+      // الرقم الدائم بلا أي طريقة لتغييره.
+      final first = _firstEntry;
+      if (first == null) {
+        setState(() {
+          _firstEntry = pin;
+          _entered = '';
+          _loading = false;
+        });
+        return;
+      }
+      if (first != pin) {
+        setState(() {
+          _error = 'الرقمان غير متطابقين — ابدأ من جديد';
+          _firstEntry = null;
+          _entered = '';
+          _loading = false;
+        });
+        return;
+      }
       await _storage.write(key: _pinKey, value: pin);
+      if (!mounted) return;
+      _pinExists = true;
       ref.read(_unlockedProvider.notifier).state = true;
     } else if (stored == pin) {
       ref.read(_unlockedProvider.notifier).state = true;
@@ -209,6 +248,41 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
         _entered = '';
         _loading = false;
       });
+    }
+  }
+
+  /// يمسح رقمًا منسيًّا بعد إثبات الهوية بقفل الجهاز نفسه (بصمة أو رقم الجهاز)،
+  /// فيصير بالإمكان تعيين رقم جديد. قبل هذا ما كان في أي طريق لتغيير الرقم
+  /// بعد حفظه أول مرة.
+  Future<void> _resetPin() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final ok = await _auth.authenticate(
+        localizedReason: 'Confirm your identity to reset the Secure Folder PIN',
+        options: const AuthenticationOptions(
+          biometricOnly: false,
+          stickyAuth: true,
+        ),
+      );
+      if (!ok) {
+        setState(() => _error = 'Authentication failed');
+        return;
+      }
+      await _storage.delete(key: _pinKey);
+      if (!mounted) return;
+      setState(() {
+        _pinExists = false;
+        _firstEntry = null;
+        _entered = '';
+        _error = 'تم مسح الرقم — اكتب رقمًا جديدًا مرتين';
+      });
+    } on PlatformException catch (e) {
+      setState(() => _error = e.message ?? 'Error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -289,16 +363,15 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
           ),
         ),
         const SizedBox(height: 24),
-        FutureBuilder<bool>(
-          future: _hasPin(),
-          builder: (context, snapshot) {
-            final title = snapshot.data == true ? 'Enter PIN' : 'Create a 6-digit PIN';
-            return Text(
-              title,
-              style: const TextStyle(color: Colors.white, fontSize: 20,
-                  fontWeight: FontWeight.w600),
-            );
-          },
+        // كان هذا FutureBuilder يقرأ التخزين الآمن مع كل رقم يُضغط.
+        Text(
+          _pinExists
+              ? 'Enter PIN'
+              : _firstEntry == null
+                  ? 'Create a 6-digit PIN'
+                  : 'Confirm your PIN',
+          style: const TextStyle(color: Colors.white, fontSize: 20,
+              fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 32),
         // نقاط
@@ -340,13 +413,14 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
                 _entered = _entered.substring(0, _entered.length - 1);
             }),
           ),
+        if (_pinExists && !_loading)
+          TextButton(
+            onPressed: _resetPin,
+            child: const Text('نسيت الرقم؟',
+                style: TextStyle(color: AppColors.mintAccent)),
+          ),
       ],
     );
-  }
-
-  Future<bool> _hasPin() async {
-    final v = await _storage.read(key: _pinKey);
-    return v != null;
   }
 }
 
@@ -782,14 +856,32 @@ class _GalleryPicker extends StatefulWidget {
 }
 
 class _GalleryPickerState extends State<_GalleryPicker> {
-  List<AssetEntity> _assets = [];
+  static const _pageSize = 120;
+
+  final List<AssetEntity> _assets = [];
   final Set<String> _selected = {};
+  final _scrollCtrl = ScrollController();
+  AssetPathEntity? _album;
+  int _page = 0;
+  bool _hasMore = true;
+  bool _loadingMore = false;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _scrollCtrl.addListener(_onScroll);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollCtrl.position.extentAfter < 600) _loadPage();
   }
 
   Future<void> _load() async {
@@ -802,12 +894,30 @@ class _GalleryPickerState extends State<_GalleryPicker> {
       ),
     );
     if (albums.isEmpty) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
       return;
     }
-    final assets =
-    await albums.first.getAssetListPaged(page: 0, size: 200);
-    setState(() { _assets = assets; _loading = false; });
+    _album = albums.first;
+    await _loadPage();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  /// Loads one page and keeps the rest reachable by scrolling. The picker used
+  /// to fetch a single 200-item page, so older photos could not be hidden at
+  /// all on a large library.
+  Future<void> _loadPage() async {
+    final album = _album;
+    if (album == null || _loadingMore || !_hasMore) return;
+    _loadingMore = true;
+
+    final batch = await album.getAssetListPaged(page: _page, size: _pageSize);
+    if (!mounted) return;
+    setState(() {
+      _assets.addAll(batch);
+      _page++;
+      _hasMore = batch.length >= _pageSize;
+      _loadingMore = false;
+    });
   }
 
   @override
@@ -820,24 +930,45 @@ class _GalleryPickerState extends State<_GalleryPicker> {
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
-              const Text('Select files to hide',
-                  style: TextStyle(fontSize: 16,
-                      fontWeight: FontWeight.w600)),
-              const Spacer(),
-              if (_selected.isNotEmpty)
-                ElevatedButton(
-                  onPressed: () {
-                    final selected = _assets
-                        .where((a) => _selected.contains(a.id))
-                        .toList();
-                    Navigator.pop(context);
-                    widget.onConfirm(selected);
-                  },
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.navyDeep),
-                  child: Text('Move ${_selected.length}',
-                      style: const TextStyle(color: Colors.white)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Select files to hide',
+                        style: TextStyle(fontSize: 16,
+                            fontWeight: FontWeight.w600)),
+                    Text(
+                      _selected.isEmpty
+                          ? 'Tap photos to select'
+                          : '${_selected.length} selected',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ],
                 ),
+              ),
+              const SizedBox(width: 12),
+              // Stays on screen while nothing is selected: hiding it made the
+              // sheet look like it had no way to confirm at all.
+              ElevatedButton(
+                onPressed: _selected.isEmpty
+                    ? null
+                    : () {
+                        final selected = _assets
+                            .where((a) => _selected.contains(a.id))
+                            .toList();
+                        Navigator.pop(context);
+                        widget.onConfirm(selected);
+                      },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.navyDeep,
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 18)),
+                child: Text(
+                    _selected.isEmpty ? 'Add' : 'Add ${_selected.length}',
+                    style: const TextStyle(color: Colors.white)),
+              ),
             ]),
           ),
           // تحذير
@@ -869,6 +1000,7 @@ class _GalleryPickerState extends State<_GalleryPicker> {
                 ? const Center(child: CircularProgressIndicator(
                 color: AppColors.navyDeep))
                 : GridView.builder(
+              controller: _scrollCtrl,
               padding: const EdgeInsets.all(2),
               gridDelegate:
               const SliverGridDelegateWithFixedCrossAxisCount(
@@ -887,18 +1019,17 @@ class _GalleryPickerState extends State<_GalleryPicker> {
                         : _selected.add(asset.id);
                   }),
                   child: Stack(fit: StackFit.expand, children: [
-                    FutureBuilder<Uint8List?>(
-                      future: asset.thumbnailDataWithSize(
-                          const ThumbnailSize.square(200)),
-                      builder: (_, snap) {
-                        if (snap.data == null) {
-                          return Container(
-                              color: AppColors.textHint
-                                  .withOpacity(0.1));
-                        }
-                        return Image.memory(snap.data!,
-                            fit: BoxFit.cover);
-                      },
+                    // A cached provider rather than a per-build thumbnail
+                    // future: every selection tap rebuilds the grid, and the
+                    // old FutureBuilder refetched each visible thumbnail on
+                    // each rebuild, so tapping looked like it did nothing.
+                    Image(
+                      image: AssetEntityImageProvider(
+                        asset,
+                        isOriginal: false,
+                        thumbnailSize: const ThumbnailSize.square(200),
+                      ),
+                      fit: BoxFit.cover,
                     ),
                     if (sel)
                       Container(

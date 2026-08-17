@@ -39,7 +39,7 @@ class _OcrScreenState extends State<OcrScreen> {
       if (asset == null || file == null) throw StateError('الصورة غير متاحة');
       final result = await OcrService.instance.extractCombinedText(
         file.path,
-        runArabic: true,
+        arabic: ArabicOcrMode.force,
         thoroughArabic: true,
       );
 

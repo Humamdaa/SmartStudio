@@ -18,9 +18,13 @@ void pixMindCallbackDispatcher() {
     try {
       if (!await AppPrefs.instance.backgroundIndexingEnabled) return true;
       final indexer = PreciseIndexer();
-      await indexer.enqueueRecent(limit: 500);
+      // Walks newest -> oldest across the whole library, so successive wake-ups
+      // keep making progress. The old call enqueued only the newest 500 photos
+      // every time, so once those were indexed the queue stayed empty for good
+      // and the rest of the library was never reached.
+      await indexer.enqueueNextUnindexed(limit: 200);
       final result = await indexer.processQueueBatch(
-        batchSize: 4,
+        batchSize: 12,
         onProgress: (_) {},
         shouldCancel: () => false,
         waitWhilePaused: () async {},

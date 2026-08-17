@@ -48,7 +48,12 @@ class AppTheme {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.navyDeep,
             foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 52),
+            // The width must stay finite. A button placed directly in a Row is
+            // laid out with an unbounded width, so an infinite minimum width
+            // resolves to an invalid size and the button paints nothing at all
+            // — silently, because release builds draw no overflow markers.
+            // Buttons that want full width wrap themselves in a SizedBox.
+            minimumSize: const Size(0, 52),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppSizes.radiusMd),
             ),

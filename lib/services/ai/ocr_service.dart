@@ -7,6 +7,18 @@ import 'package:image/image.dart' as img;
 import 'package:tesseract_ocr/ocr_engine_config.dart';
 import 'package:tesseract_ocr/tesseract_ocr.dart';
 
+/// When the (expensive) Arabic Tesseract pass should run.
+enum ArabicOcrMode {
+  /// Never.
+  off,
+
+  /// Only when the Latin pass found text regions in the image.
+  auto,
+
+  /// Always — for an explicit, user-requested extraction.
+  force,
+}
+
 class OcrExtraction {
   final String text;
   final List<String> scripts;
@@ -39,7 +51,7 @@ class OcrService {
 
   Future<OcrExtraction> extractCombinedText(
     String imagePath, {
-    bool runArabic = false,
+    ArabicOcrMode arabic = ArabicOcrMode.off,
     bool thoroughArabic = false,
   }) {
     final turn = Completer<void>();
@@ -49,7 +61,7 @@ class OcrService {
       try {
         return await _extractCombinedText(
           imagePath,
-          runArabic: runArabic,
+          arabic: arabic,
           thoroughArabic: thoroughArabic,
         );
       } finally {
@@ -60,7 +72,7 @@ class OcrService {
 
   Future<OcrExtraction> _extractCombinedText(
     String imagePath, {
-    required bool runArabic,
+    required ArabicOcrMode arabic,
     required bool thoroughArabic,
   }) async {
     final pieces = <String>[];
@@ -79,6 +91,18 @@ class OcrService {
     } catch (error) {
       debugPrint('PixMind Latin OCR error: $error');
     }
+
+    // ML Kit's Latin detector still locates the text *regions* of an Arabic
+    // photo even when it cannot read the glyphs, so a non-empty block list is a
+    // cheap, language-agnostic "this image contains text" signal. The previous
+    // gate required an English keyword ('screenshot', 'document', 'receipt'…)
+    // in the title or the scene labels, which almost never matches an ordinary
+    // Arabic photo — so Arabic OCR was skipped across nearly the whole library.
+    final runArabic = switch (arabic) {
+      ArabicOcrMode.off => false,
+      ArabicOcrMode.force => true,
+      ArabicOcrMode.auto => latinBlocks.isNotEmpty,
+    };
 
     if (runArabic) {
       String? focusedArabicPath;
@@ -275,29 +299,6 @@ class OcrService {
     } catch (_) {
       return [];
     }
-  }
-
-  bool shouldRunArabic({
-    required String? title,
-    required List<String> scenes,
-  }) {
-    final source = '${title ?? ''} ${scenes.join(' ')}'.toLowerCase();
-    const textHints = [
-      'screenshot',
-      'screen',
-      'document',
-      'paper',
-      'receipt',
-      'invoice',
-      'book',
-      'poster',
-      'menu',
-      'sign',
-      'text',
-      'writing',
-      'ocr',
-    ];
-    return textHints.any(source.contains);
   }
 
   Future<String> _runArabicTesseract(
