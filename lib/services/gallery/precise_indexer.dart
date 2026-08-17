@@ -222,7 +222,12 @@ class PreciseIndexer {
         phase: 'تم الحفظ؛ ننتقل للصورة التالية…',
         assetName: asset.title,
       ));
-      await Future<void>.delayed(const Duration(milliseconds: 90));
+      // A breather so the UI stays responsive. Kept only for background work:
+      // in the foreground 90ms per photo added up to over two hours of pure
+      // sleeping across a library this size.
+      if (mode == 'background') {
+        await Future<void>.delayed(const Duration(milliseconds: 90));
+      }
     }
 
     if (processed > 0 && !cancelled) {
@@ -303,15 +308,13 @@ class PreciseIndexer {
       ));
       scenes = await SceneLabelService.instance.labelImage(file.path);
       final arabicEnabled = await AppPrefs.instance.arabicOcrEnabled;
-      final runArabic = arabicEnabled &&
-          (forceArabicOcr ||
-              OcrService.instance.shouldRunArabic(
-                title: asset.title,
-                scenes: scenes,
-              ));
       ocr = await OcrService.instance.extractCombinedText(
         file.path,
-        runArabic: runArabic,
+        arabic: !arabicEnabled
+            ? ArabicOcrMode.off
+            : forceArabicOcr
+                ? ArabicOcrMode.force
+                : ArabicOcrMode.auto,
       );
 
       await waitWhilePaused();

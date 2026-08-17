@@ -382,6 +382,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       body: PageView.builder(
         controller: _pageCtrl,
         onPageChanged: _onPageChanged,
+        // يبني الصفحة المجاورة مسبقًا، فالسوايب ما يستنى فكّ ترميز صورة جديدة.
+        allowImplicitScrolling: true,
         // وقت ما تكون الصورة مكبّرة نوقف تبديل الصفحات حتى السحب يحرّك الصورة.
         physics: _isZoomed
             ? const NeverScrollableScrollPhysics()
@@ -491,7 +493,11 @@ class _ImagePageState extends State<_ImagePage>
   void _onTransform() {
     final zoomed = _tc.value.getMaxScaleOnAxis() > 1.05;
     if (zoomed != _lastZoomed) {
-      _lastZoomed = zoomed;
+      if (mounted) {
+        setState(() => _lastZoomed = zoomed);
+      } else {
+        _lastZoomed = zoomed;
+      }
       widget.onZoomChanged?.call(zoomed);
     }
   }
@@ -535,13 +541,22 @@ class _ImagePageState extends State<_ImagePage>
           transformationController: _tc,
           minScale: 1.0,
           maxScale: 6.0,
+          // التحريك مسموح فقط وقت التكبير. مع boundaryMargin الأكبر من الصورة،
+          // كان التحريك شغّالًا حتى بمقياس 1.0، فالسحب الأفقي يروح للصورة
+          // نفسها بدل الانتقال للصفحة التالية — الصورة تزيح جانبًا وتعلق.
+          panEnabled: _lastZoomed,
           // هامش يسمح بالتحريك المريح لكل أجزاء الصورة المكبّرة.
           boundaryMargin: const EdgeInsets.all(64),
           child: Image(
+            // الدقّة الكاملة غالية على كل صفحة. منعرض نسخة بحجم الشاشة
+            // للتقليب السريع، ومنجيب الأصل لمّا يكبّر المستخدم فعلًا.
             image: AssetEntityImageProvider(
               widget.item.asset,
-              isOriginal: true, // جودة كاملة في التفاصيل
+              isOriginal: _lastZoomed,
+              thumbnailSize: const ThumbnailSize(1440, 1440),
             ),
+            // يمنع وميض التبديل بين نسخة الشاشة والأصل.
+            gaplessPlayback: true,
             fit: BoxFit.contain,
             loadingBuilder: (_, child, progress) {
               if (progress == null) return child;
