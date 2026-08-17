@@ -6,7 +6,6 @@ import 'data/database/objectbox/objectbox_store.dart';
 import 'services/secure_storage_service.dart';
 import 'services/gallery/background_indexer.dart';
 
-
 final objectBoxProvider = Provider<ObjectBoxStore>((ref) {
   throw UnimplementedError('Override in main()');
 });
@@ -32,9 +31,9 @@ void main() async {
   await SecureStorageService.instance.init();
 
   runApp(
-      ProviderScope(
-          overrides: [
-            objectBoxProvider.overrideWithValue(obStore),
-          ],
-      child: PixMindApp()));
+    ProviderScope(
+      overrides: [objectBoxProvider.overrideWithValue(obStore)],
+      child: PixMindApp(),
+    ),
+  );
 }

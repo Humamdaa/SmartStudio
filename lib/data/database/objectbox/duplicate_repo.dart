@@ -7,15 +7,12 @@ class DuplicateRepo {
   final ObjectBoxStore _store;
   DuplicateRepo(this._store);
 
-  Box<DuplicateGroup>  get _groupBox  => _store.dupGroupBox;
+  Box<DuplicateGroup> get _groupBox => _store.dupGroupBox;
   Box<DuplicateMember> get _memberBox => _store.dupMemberBox;
 
   // حفظ مجموعة مكررات
   void saveGroup(String groupHash, List<_DupEntry> members) {
-    final group = DuplicateGroup(
-      groupHash: groupHash,
-      foundAt: DateTime.now(),
-    );
+    final group = DuplicateGroup(groupHash: groupHash, foundAt: DateTime.now());
     _groupBox.put(group);
 
     for (final m in members) {

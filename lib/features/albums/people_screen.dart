@@ -49,7 +49,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   Future<void> _rename(PersonGroup person) async {
-    final controller = TextEditingController(text: person.isNamed ? person.name : '');
+    final controller = TextEditingController(
+      text: person.isNamed ? person.name : '',
+    );
     final name = await showDialog<String>(
       context: context,
       builder: (context) => Directionality(
@@ -62,7 +64,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
             decoration: const InputDecoration(hintText: 'مثال: أحمد'),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء'),
+            ),
             FilledButton(
               onPressed: () => Navigator.pop(context, controller.text.trim()),
               child: const Text('حفظ'),
@@ -79,7 +84,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   Future<void> _merge(PersonGroup person) async {
     final all = await _repository.allPeople(visibleOnly: false);
-    final others = all.where((item) => item.id != person.id).toList(growable: false);
+    final others = all
+        .where((item) => item.id != person.id)
+        .toList(growable: false);
     if (!mounted) return;
     if (others.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -118,7 +125,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء'),
+            ),
           ],
         ),
       ),
@@ -135,8 +145,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
             'سيتم اعتبار «${person.name}» و«${other.name}» الشخص نفسه ونقل الصور إلى ألبوم واحد.',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('دمج')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('دمج'),
+            ),
           ],
         ),
       ),
@@ -159,8 +175,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
             'لن يعاد YOLO أو OCR. سنحافظ على الأسماء التي سميتها قدر الإمكان.',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('ابدأ')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('ابدأ'),
+            ),
           ],
         ),
       ),
@@ -241,7 +263,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
       }
     } catch (error, stackTrace) {
       debugPrint('PixMind people rebuild failed: $error\n$stackTrace');
-      if (mounted) setState(() => _rebuildStatus = 'تعذرت إعادة البناء: $error');
+      if (mounted)
+        setState(() => _rebuildStatus = 'تعذرت إعادة البناء: $error');
     } finally {
       if (mounted) setState(() => _rebuilding = false);
     }
@@ -300,7 +323,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                     const SizedBox(width: 8),
                     FilterChip(
                       selected: _showCandidates,
-                      label: Text(_showCandidates ? 'إخفاء المرشحين' : 'إظهار المرشحين'),
+                      label: Text(
+                        _showCandidates ? 'إخفاء المرشحين' : 'إظهار المرشحين',
+                      ),
                       onSelected: (value) async {
                         setState(() => _showCandidates = value);
                         await _reload();
@@ -313,29 +338,33 @@ class _PeopleScreenState extends State<PeopleScreen> {
               child: people == null
                   ? const Center(child: CircularProgressIndicator())
                   : people.isEmpty
-                      ? const _PeopleEmpty()
-                      : GridView.builder(
-                          padding: const EdgeInsets.all(14),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  ? const _PeopleEmpty()
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(14),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 2,
                             crossAxisSpacing: 10,
                             mainAxisSpacing: 10,
                             childAspectRatio: .82,
                           ),
-                          itemCount: people.length,
-                          itemBuilder: (context, index) {
-                            final person = people[index];
-                            return _PersonCard(
-                              person: person,
-                              onRename: () => _rename(person),
-                              onMerge: () => _merge(person),
-                              onTap: () async {
-                                await context.push(AppRoutes.personDetail, extra: person.id);
-                                _reload();
-                              },
+                      itemCount: people.length,
+                      itemBuilder: (context, index) {
+                        final person = people[index];
+                        return _PersonCard(
+                          person: person,
+                          onRename: () => _rename(person),
+                          onMerge: () => _merge(person),
+                          onTap: () async {
+                            await context.push(
+                              AppRoutes.personDetail,
+                              extra: person.id,
                             );
+                            _reload();
                           },
-                        ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -367,7 +396,9 @@ class _PeopleInfoBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = total <= 0 ? null : (processed / total).clamp(0.0, 1.0).toDouble();
+    final progress = total <= 0
+        ? null
+        : (processed / total).clamp(0.0, 1.0).toDouble();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -407,12 +438,18 @@ class _PeopleInfoBanner extends StatelessWidget {
             const SizedBox(height: 5),
             Text(
               status ?? 'إعادة بناء الوجوه… $processed/$total',
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             if (rebuilding)
               Row(
                 children: [
-                  Text('$processed/$total  •  تعذر: $failed', style: const TextStyle(fontSize: 11)),
+                  Text(
+                    '$processed/$total  •  تعذر: $failed',
+                    style: const TextStyle(fontSize: 11),
+                  ),
                   const Spacer(),
                   TextButton.icon(
                     onPressed: onStop,
@@ -467,7 +504,10 @@ class _PersonCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
-                        Text('${person.photoCount} صورة', style: const TextStyle(fontSize: 12)),
+                        Text(
+                          '${person.photoCount} صورة',
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ],
                     ),
                   ),
@@ -621,8 +661,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             'سنزيل الصورة من ألبوم «${person.name}» ونتذكر هذا التصحيح كي لا يعيد المحرك إسنادها لنفس الشخص.',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('إزالة')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('إزالة'),
+            ),
           ],
         ),
       ),
@@ -632,7 +678,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     await _load();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم التصحيح. سيعاد تصنيف وجه الصورة في التحليل القادم.')),
+        const SnackBar(
+          content: Text(
+            'تم التصحيح. سيعاد تصنيف وجه الصورة في التحليل القادم.',
+          ),
+        ),
       );
     }
   }
@@ -663,11 +713,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   Expanded(
                     child: GridView.builder(
                       padding: const EdgeInsets.all(4),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 4,
-                        mainAxisSpacing: 4,
-                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 4,
+                            mainAxisSpacing: 4,
+                          ),
                       itemCount: assets.length,
                       itemBuilder: (context, index) {
                         final asset = assets[index];
@@ -677,7 +728,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                             AppRoutes.detail,
                             extra: {
                               'id': asset.id,
-                              'items': assets.map(MediaItem.fromAsset).toList(growable: false),
+                              'items': assets
+                                  .map(MediaItem.fromAsset)
+                                  .toList(growable: false),
                             },
                           ),
                           child: AssetEntityImage(

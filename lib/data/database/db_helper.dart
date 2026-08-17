@@ -518,7 +518,6 @@ class DatabaseHelper {
     );
   }
 
-
   /// Stores OCR extracted from the per-photo OCR screen in the same SQLite
   /// index used by gallery search. Existing YOLO/scene/face fields are kept.
   /// If the photo has not been AI-indexed yet, create a minimal searchable row
@@ -535,7 +534,8 @@ class DatabaseHelper {
   }) async {
     final database = await db;
     final now = DateTime.now().millisecondsSinceEpoch;
-    await database.rawInsert('''
+    await database.rawInsert(
+      '''
       INSERT INTO search_index (
         asset_id, title, taken_at, width, height,
         ocr_text, ocr_search_text, ocr_scripts,
@@ -546,18 +546,20 @@ class DatabaseHelper {
         ocr_search_text = excluded.ocr_search_text,
         ocr_scripts = excluded.ocr_scripts,
         indexed_at = excluded.indexed_at
-    ''', [
-      assetId,
-      title,
-      takenAt,
-      width,
-      height,
-      ocrText,
-      ocrSearchText,
-      ocrScriptsJson,
-      now,
-      'manual-ocr-v1',
-    ]);
+    ''',
+      [
+        assetId,
+        title,
+        takenAt,
+        width,
+        height,
+        ocrText,
+        ocrSearchText,
+        ocrScriptsJson,
+        now,
+        'manual-ocr-v1',
+      ],
+    );
   }
 
   Future<bool> hasSearchIndex(String assetId) async {
@@ -964,9 +966,13 @@ class DatabaseHelper {
   /// This only reads results that the smart-search face pipeline has already
   /// stored. It never runs ML Kit or MobileFaceNet from the suggestions screen,
   /// so opening For You does not add AI load or battery pressure.
-  Future<Map<String,
-      ({int faceCount, double bestQuality, double bestPose, double bestArea})>>
-      getFaceSuggestionSignals(Iterable<String> assetIds) async {
+  Future<
+    Map<
+      String,
+      ({int faceCount, double bestQuality, double bestPose, double bestArea})
+    >
+  >
+  getFaceSuggestionSignals(Iterable<String> assetIds) async {
     final ids = assetIds.toSet().toList(growable: false);
     if (ids.isEmpty) return const {};
 
@@ -988,9 +994,16 @@ class DatabaseHelper {
       GROUP BY fs.asset_id, fs.face_count
     ''', ids);
 
-    final result = <
-        String,
-        ({int faceCount, double bestQuality, double bestPose, double bestArea})>{};
+    final result =
+        <
+          String,
+          ({
+            int faceCount,
+            double bestQuality,
+            double bestPose,
+            double bestArea,
+          })
+        >{};
     for (final row in rows) {
       final assetId = row['asset_id']?.toString();
       if (assetId == null) continue;
@@ -1630,7 +1643,6 @@ class DatabaseHelper {
     return results.map((row) => row['asset_id'] as String).toList();
   }
 
-
   /// Real smart-album suggestions derived from the existing offline AI index.
   /// No model is run here; this is only a cheap read over labels/OCR already
   /// stored by YOLO/scene/OCR indexing.
@@ -1645,8 +1657,16 @@ class DatabaseHelper {
     switch (key) {
       case 'nature':
         const terms = [
-          'tree', 'plant', 'flower', 'forest', 'grass', 'mountain',
-          'sky', 'outdoor', 'landscape', 'garden',
+          'tree',
+          'plant',
+          'flower',
+          'forest',
+          'grass',
+          'mountain',
+          'sky',
+          'outdoor',
+          'landscape',
+          'garden',
         ];
         where = terms
             .map((_) => '(LOWER(objects) LIKE ? OR LOWER(scenes) LIKE ?)')
@@ -1658,17 +1678,46 @@ class DatabaseHelper {
       case 'documents':
         // Text-rich and document-like, not merely a photo containing one word.
         const photoSubjectTerms = [
-          'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
-          'train', 'truck', 'boat', 'bird', 'cat', 'dog', 'horse', 'sheep',
-          'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'sports ball',
-          'kite', 'skateboard', 'surfboard', 'tennis racket', 'banana',
-          'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog',
-          'pizza', 'donut', 'cake',
+          'person',
+          'bicycle',
+          'car',
+          'motorcycle',
+          'airplane',
+          'bus',
+          'train',
+          'truck',
+          'boat',
+          'bird',
+          'cat',
+          'dog',
+          'horse',
+          'sheep',
+          'cow',
+          'elephant',
+          'bear',
+          'zebra',
+          'giraffe',
+          'sports ball',
+          'kite',
+          'skateboard',
+          'surfboard',
+          'tennis racket',
+          'banana',
+          'apple',
+          'sandwich',
+          'orange',
+          'broccoli',
+          'carrot',
+          'hot dog',
+          'pizza',
+          'donut',
+          'cake',
         ];
         final exclusions = photoSubjectTerms
             .map((_) => 'LOWER(objects) NOT LIKE ?')
             .join(' AND ');
-        where = '''
+        where =
+            '''
           LENGTH(TRIM(COALESCE(ocr_text, ''))) >= ?
           AND (
             LENGTH(COALESCE(ocr_text, '')) -
@@ -1677,17 +1726,24 @@ class DatabaseHelper {
           AND COALESCE(face_count, 0) = 0
           AND $exclusions
         ''';
-        args = [
-          45,
-          4,
-          for (final term in photoSubjectTerms) '%$term%',
-        ];
+        args = [45, 4, for (final term in photoSubjectTerms) '%$term%'];
         break;
       case 'food':
         const terms = [
-          'food', 'pizza', 'sandwich', 'hot dog', 'cake', 'donut',
-          'banana', 'apple', 'orange', 'broccoli', 'carrot', 'dining table',
-          'cup', 'bowl',
+          'food',
+          'pizza',
+          'sandwich',
+          'hot dog',
+          'cake',
+          'donut',
+          'banana',
+          'apple',
+          'orange',
+          'broccoli',
+          'carrot',
+          'dining table',
+          'cup',
+          'bowl',
         ];
         where = terms
             .map((_) => '(LOWER(objects) LIKE ? OR LOWER(scenes) LIKE ?)')

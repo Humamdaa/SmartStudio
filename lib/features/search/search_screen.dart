@@ -15,6 +15,8 @@ import '../../data/models/media_item.dart';
 import '../../data/prefs/app_prefs.dart';
 import '../../services/smart_search_bridge.dart';
 import '../albums/indexing_providers.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_result.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // Smart Search — teammate UI + stable v2.1.1 offline search engine.
@@ -27,7 +29,17 @@ import '../albums/indexing_providers.dart';
 // intersected with the typed AI filters. Image and voice remain UI prototypes.
 // ═══════════════════════════════════════════════════════════════
 
-enum SearchMethod { text, ocr, objects, people, scenes, date, image, color, voice }
+enum SearchMethod {
+  text,
+  ocr,
+  objects,
+  people,
+  scenes,
+  date,
+  image,
+  color,
+  voice,
+}
 
 enum SearchMode { general, precise }
 
@@ -82,6 +94,82 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void initState() {
     super.initState();
     _loadSmartState();
+    _initSpeech();
+  }
+
+Future<void> _submitTopSearch(String value) async {
+  if (_method == SearchMethod.voice) {
+    await _runSemanticTextSearch(value);
+    return;
+  }
+
+  await _runIndexedSearch();
+}
+
+  Future<void> _initSpeech() async {
+    try {
+      final available = await _speech.initialize(
+        onStatus: _onSpeechStatus,
+        onError: (error) {
+          _timer?.cancel();
+
+          if (!mounted) return;
+
+          setState(() {
+            _speechError = error.errorMsg;
+
+            if (_transcript.text.trim().isNotEmpty) {
+              _voice = VoiceState.done;
+            } else {
+              _voice = VoiceState.idle;
+            }
+          });
+        },
+      );
+
+      if (!available) {
+        if (!mounted) return;
+
+        setState(() {
+          _speechReady = false;
+          _speechError = 'Speech recognition is not available on this device.';
+        });
+        return;
+      }
+
+      final locales = await _speech.locales();
+
+      String? arabicLocale;
+      String? englishLocale;
+
+      for (final locale in locales) {
+        final id = locale.localeId.toLowerCase();
+
+        if (arabicLocale == null && id.startsWith('ar')) {
+          arabicLocale = locale.localeId;
+        }
+
+        if (englishLocale == null && id.startsWith('en')) {
+          englishLocale = locale.localeId;
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _speechReady = true;
+        _arabicLocaleId = arabicLocale;
+        _englishLocaleId = englishLocale;
+        _speechError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _speechReady = false;
+        _speechError = 'Speech initialization failed: $error';
+      });
+    }
   }
 
   Future<void> _loadSmartState() async {
@@ -105,33 +193,33 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   bool _supportsIndexedText(SearchMethod method) => switch (method) {
-        SearchMethod.text ||
-        SearchMethod.ocr ||
-        SearchMethod.objects ||
-        SearchMethod.people ||
-        SearchMethod.scenes ||
-        SearchMethod.date => true,
-        _ => false,
-      };
+    SearchMethod.text ||
+    SearchMethod.ocr ||
+    SearchMethod.objects ||
+    SearchMethod.people ||
+    SearchMethod.scenes ||
+    SearchMethod.date => true,
+    _ => false,
+  };
 
   String? _prefixFor(SearchMethod method) => switch (method) {
-        SearchMethod.ocr => 'ocr',
-        SearchMethod.objects => 'object',
-        SearchMethod.people => 'person',
-        SearchMethod.scenes => 'scene',
-        SearchMethod.date => 'date',
-        _ => null,
-      };
+    SearchMethod.ocr => 'ocr',
+    SearchMethod.objects => 'object',
+    SearchMethod.people => 'person',
+    SearchMethod.scenes => 'scene',
+    SearchMethod.date => 'date',
+    _ => null,
+  };
 
   String _filterLabel(SearchMethod method) => switch (method) {
-        SearchMethod.ocr => 'OCR',
-        SearchMethod.objects => 'Object',
-        SearchMethod.people => 'Person',
-        SearchMethod.scenes => 'Scene',
-        SearchMethod.date => 'Date',
-        SearchMethod.text => 'All',
-        _ => 'Text',
-      };
+    SearchMethod.ocr => 'OCR',
+    SearchMethod.objects => 'Object',
+    SearchMethod.people => 'Person',
+    SearchMethod.scenes => 'Scene',
+    SearchMethod.date => 'Date',
+    SearchMethod.text => 'All',
+    _ => 'Text',
+  };
 
   String _qualified(SearchMethod method, String value) {
     final clean = value.trim().replaceAll('"', ' ');
@@ -156,11 +244,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return parts.where((part) => part.isNotEmpty).join(' ');
   }
 
-  void _onQueryChanged(String value) {
-    if (!_supportsIndexedText(_method)) return;
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 320), _runIndexedSearch);
+ void _onQueryChanged(String value) {
+  _searchDebounce?.cancel();
+
+  if (_method == SearchMethod.voice) {
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 700),
+      () => _runSemanticTextSearch(value),
+    );
+    return;
   }
+
+  if (!_supportsIndexedText(_method)) return;
+
+  _searchDebounce = Timer(
+    const Duration(milliseconds: 320),
+    _runIndexedSearch,
+  );
+}
 
   Future<void> _commitCurrentAs(SearchMethod method) async {
     final value = _controller.text.trim();
@@ -241,7 +342,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       setState(() {
         _results = [];
         _searching = false;
-        _searchStatus = 'Type a query or add a filter to search the offline index.';
+        _searchStatus =
+            'Type a query or add a filter to search the offline index.';
       });
       return;
     }
@@ -250,7 +352,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       setState(() {
         _results = [];
         _searching = false;
-        _searchStatus = 'The current AI index covers photos; video semantic search is not wired yet.';
+        _searchStatus =
+            'The current AI index covers photos; video semantic search is not wired yet.';
       });
       return;
     }
@@ -314,14 +417,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           if (!mounted) return;
           setState(() {
             _aiProgress = p.total <= 0 ? null : p.processed / p.total;
-            _aiStatus = p.assetName == null ? p.phase : '${p.phase}\n${p.assetName}';
+            _aiStatus = p.assetName == null
+                ? p.phase
+                : '${p.phase}\n${p.assetName}';
           });
         },
       );
       await _refreshAiStats();
       if (!mounted) return;
       setState(() {
-        _aiStatus = result.pausedReason ??
+        _aiStatus =
+            result.pausedReason ??
             (result.cancelled
                 ? 'Indexing stopped safely.'
                 : 'Next batch finished: ${result.processed} processed, ${result.failed} failed.');
@@ -360,14 +466,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           if (!mounted) return;
           setState(() {
             _aiProgress = p.total <= 0 ? null : p.processed / p.total;
-            _aiStatus = p.assetName == null ? p.phase : '${p.phase}\n${p.assetName}';
+            _aiStatus = p.assetName == null
+                ? p.phase
+                : '${p.phase}\n${p.assetName}';
           });
         },
       );
       await _refreshAiStats();
       if (!mounted) return;
       setState(() {
-        _aiStatus = result.pausedReason ??
+        _aiStatus =
+            result.pausedReason ??
             (result.cancelled
                 ? 'Refresh stopped safely.'
                 : 'Latest 20 refreshed: ${result.processed} processed, ${result.failed} failed.');
@@ -412,14 +521,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           if (!mounted) return;
           setState(() {
             _aiProgress = p.total <= 0 ? null : p.processed / p.total;
-            _aiStatus = p.assetName == null ? p.phase : '${p.phase}\n${p.assetName}';
+            _aiStatus = p.assetName == null
+                ? p.phase
+                : '${p.phase}\n${p.assetName}';
           });
         },
       );
       await _refreshAiStats();
       if (!mounted) return;
       setState(() {
-        _aiStatus = result.pausedReason ??
+        _aiStatus =
+            result.pausedReason ??
             (result.cancelled
                 ? 'Indexing stopped safely; it can resume later.'
                 : 'Full index pass finished: ${result.processed} processed, ${result.failed} failed.');
@@ -450,7 +562,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _retryFailedAi() async {
     await _smart.retryFailed();
     await _refreshAiStats();
-    if (mounted) setState(() => _aiStatus = 'Failed photos returned to the queue.');
+    if (mounted)
+      setState(() => _aiStatus = 'Failed photos returned to the queue.');
   }
 
   /// البحث باللون — بيقرأ من الألوان السائدة المفهرسة مسبقًا،
@@ -464,21 +577,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   // ── Voice recording state ──────────────────────────────────
+  final stt.SpeechToText _speech = stt.SpeechToText();
+
   VoiceState _voice = VoiceState.idle;
   Timer? _timer;
   int _seconds = 0;
 
+  bool _speechReady = false;
+  String? _arabicLocaleId;
+  String? _englishLocaleId;
+  String? _speechError;
+
   static const _colorSwatches = [
-    Color(0xFFE24B4A), Color(0xFFFF9500), Color(0xFFFFCC00),
-    Color(0xFF34C759), Color(0xFF0FDFAF), Color(0xFF2D5F9E),
-    Color(0xFF5856D6), Color(0xFFAF52DE), Color(0xFF8E8E93),
-    Color(0xFF1A1A2E), Colors.white, Color(0xFF8B5A2B),
+    Color(0xFFE24B4A),
+    Color(0xFFFF9500),
+    Color(0xFFFFCC00),
+    Color(0xFF34C759),
+    Color(0xFF0FDFAF),
+    Color(0xFF2D5F9E),
+    Color(0xFF5856D6),
+    Color(0xFFAF52DE),
+    Color(0xFF8E8E93),
+    Color(0xFF1A1A2E),
+    Colors.white,
+    Color(0xFF8B5A2B),
   ];
 
   @override
   void dispose() {
     _timer?.cancel();
     _searchDebounce?.cancel();
+    _speech.cancel();
     _controller.dispose();
     _transcript.dispose();
     super.dispose();
@@ -487,45 +616,134 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String get _langLabel => _lang == QueryLang.arabic ? 'العربية' : 'English';
 
   // ── Voice flow: idle → recording → transcribing → done ─────
-  void _toggleRecording() {
+
+  Future<void> _toggleRecording() async {
     if (_voice == VoiceState.recording) {
-      _stopRecording();
+      await _stopRecording();
     } else {
-      _startRecording();
+      await _startRecording();
     }
   }
 
-  void _startRecording() {
+  Future<void> _startRecording() async {
+    if (!_speechReady) {
+      setState(() {
+        _speechError = 'Speech recognition is not ready.';
+      });
+      return;
+    }
+
+    final localeId = _lang == QueryLang.arabic
+        ? _arabicLocaleId
+        : _englishLocaleId;
+
+    if (localeId == null) {
+      setState(() {
+        _speechError = _lang == QueryLang.arabic
+            ? 'Arabic speech recognition is not installed on this device.'
+            : 'English speech recognition is not installed on this device.';
+      });
+      return;
+    }
+
     setState(() {
       _method = SearchMethod.voice;
       _voice = VoiceState.recording;
       _seconds = 0;
+      _speechError = null;
       _transcript.clear();
     });
+
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _seconds++);
+      if (mounted) {
+        setState(() => _seconds++);
+      }
     });
-  }
 
-  void _stopRecording() {
-    _timer?.cancel();
-    setState(() => _voice = VoiceState.transcribing);
-    // محاكاة زمن التحويل لصوت→نص (المنطق الفعلي لسا ما تنفّذ)
-    Future.delayed(const Duration(milliseconds: 900), () {
+    try {
+      await _speech.listen(
+        onResult: _onSpeechResult,
+        listenOptions: stt.SpeechListenOptions(
+          localeId: localeId,
+          partialResults: true,
+          cancelOnError: true,
+          listenMode: stt.ListenMode.dictation,
+          pauseFor: const Duration(seconds: 3),
+          listenFor: const Duration(seconds: 30),
+        ),
+      );
+    } catch (error) {
+      _timer?.cancel();
+
       if (!mounted) return;
+
       setState(() {
-        _voice = VoiceState.done;
-        _transcript.text = '';
+        _voice = VoiceState.idle;
+        _speechError = 'Could not start speech recognition: $error';
       });
+    }
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    final words = result.recognizedWords.trim();
+
+    if (!mounted || words.isEmpty) return;
+
+    setState(() {
+      _transcript.text = words;
+
+      _transcript.selection = TextSelection.fromPosition(
+        TextPosition(offset: _transcript.text.length),
+      );
     });
   }
 
-  void _resetVoice() {
+  Future<void> _stopRecording() async {
     _timer?.cancel();
+
+    if (mounted) {
+      setState(() {
+        _voice = VoiceState.transcribing;
+      });
+    }
+
+    await _speech.stop();
+
+    if (!mounted) return;
+
+    setState(() {
+      _voice = VoiceState.done;
+    });
+  }
+
+  void _onSpeechStatus(String status) {
+    if (!mounted) return;
+
+    if (status == 'done' || status == 'notListening') {
+      _timer?.cancel();
+
+      if (_voice == VoiceState.recording || _voice == VoiceState.transcribing) {
+        setState(() {
+          _voice = VoiceState.done;
+        });
+      }
+    }
+  }
+
+  Future<void> _resetVoice() async {
+    _timer?.cancel();
+
+    if (_speech.isListening) {
+      await _speech.cancel();
+    }
+
+    if (!mounted) return;
+
     setState(() {
       _voice = VoiceState.idle;
       _seconds = 0;
+      _speechError = null;
       _transcript.clear();
     });
   }
@@ -539,8 +757,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: kIosGroupedBg,
         body: SafeArea(
@@ -550,7 +769,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             children: [
               const IosLargeTitle(
                 title: 'Smart Search',
-                subtitle: 'Offline multi-filter search • image & voice prototypes',
+                subtitle:
+                    'Offline multi-filter search • image & voice prototypes',
               ),
 
               Padding(
@@ -561,7 +781,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   listening: _voice == VoiceState.recording,
                   onMic: _toggleRecording,
                   onChanged: _onQueryChanged,
-                  onSubmitted: (_) => _runIndexedSearch(),
+                  onSubmitted: _submitTopSearch,
                 ),
               ),
 
@@ -625,7 +845,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ? 'Broader results — includes near matches'
                           : 'Narrow, more detailed results',
                       style: const TextStyle(
-                          color: AppColors.textSecondary, fontSize: 12.5),
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                      ),
                     ),
                   ],
                 ),
@@ -639,7 +861,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               _buildAiIndexCard(),
 
               IosSectionHeader(
-                  _results.isEmpty ? 'Results' : 'Results (${_results.length})'),
+                _results.isEmpty ? 'Results' : 'Results (${_results.length})',
+              ),
               _buildResults(),
             ],
           ),
@@ -651,7 +874,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String get _hintForMethod {
     switch (_method) {
       case SearchMethod.text:
-        return _filters.isEmpty ? 'Search a word or phrase…' : 'Add another term…';
+        return _filters.isEmpty
+            ? 'Search a word or phrase…'
+            : 'Add another term…';
       case SearchMethod.ocr:
         return 'Type OCR text, then tap OCR to lock it…';
       case SearchMethod.objects:
@@ -713,21 +938,26 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 color: active ? AppColors.navyDeep : Colors.white,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                    color: active ? AppColors.navyDeep : kIosSeparator),
+                  color: active ? AppColors.navyDeep : kIosSeparator,
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icon,
-                      color: active ? AppColors.mintAccent : AppColors.navyDeep,
-                      size: 24),
+                  Icon(
+                    icon,
+                    color: active ? AppColors.mintAccent : AppColors.navyDeep,
+                    size: 24,
+                  ),
                   const SizedBox(height: 7),
-                  Text(label,
-                      style: TextStyle(
-                        color: active ? Colors.white : AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      )),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: active ? Colors.white : AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -816,11 +1046,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     ),
                   ),
                   child: active
-                      ? Icon(Icons.check_rounded,
+                      ? Icon(
+                          Icons.check_rounded,
                           size: 20,
                           color: c.computeLuminance() > 0.6
                               ? Colors.black
-                              : Colors.white)
+                              : Colors.white,
+                        )
                       : null,
                 ),
               );
@@ -854,21 +1086,38 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        IosSectionHeader('Voice search',
-            trailing: _voice == VoiceState.idle
-                ? null
-                : GestureDetector(
-                    onTap: _resetVoice,
-                    child: const Text('Reset',
-                        style: TextStyle(
-                            color: AppColors.skyBlue,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
-                  )),
+        IosSectionHeader(
+          'Voice search',
+          trailing: _voice == VoiceState.idle
+              ? null
+              : GestureDetector(
+                  onTap: _resetVoice,
+                  child: const Text(
+                    'Reset',
+                    style: TextStyle(
+                      color: AppColors.skyBlue,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+        ),
         IosCard(
           child: Column(
             children: [
               _buildVoiceStatus(),
+              if (_speechError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _speechError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.errorRed,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
 
               // زر التسجيل — واضح إنه ابدأ / إيقاف
@@ -888,11 +1137,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     boxShadow: _voice == VoiceState.recording
                         ? [
                             BoxShadow(
-                              color:
-                                  AppColors.errorRed.withValues(alpha: 0.35),
+                              color: AppColors.errorRed.withValues(alpha: 0.35),
                               blurRadius: 18,
                               spreadRadius: 4,
-                            )
+                            ),
                           ]
                         : null,
                   ),
@@ -910,10 +1158,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 _voice == VoiceState.recording
                     ? 'Tap to stop'
                     : _voice == VoiceState.transcribing
-                        ? 'Please wait…'
-                        : 'Tap to start recording',
+                    ? 'Please wait…'
+                    : 'Tap to start recording',
                 style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 12.5),
+                  color: AppColors.textSecondary,
+                  fontSize: 12.5,
+                ),
               ),
 
               // النص المحوّل — قابل للتعديل قبل البحث
@@ -923,32 +1173,67 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 const SizedBox(height: 14),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Transcript ($_langHintStatic)',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textSecondary)),
+                  child: Text(
+                    'Transcript ($_langHintStatic)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 TextField(
                   controller: _transcript,
                   maxLines: 2,
+
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+
+                  cursorColor: AppColors.navyDeep,
+
                   textDirection: _lang == QueryLang.arabic
                       ? TextDirection.rtl
                       : TextDirection.ltr,
+
+                  textAlign: _lang == QueryLang.arabic
+                      ? TextAlign.right
+                      : TextAlign.left,
                   decoration: InputDecoration(
                     hintText: 'Your speech will appear here',
+
+                    hintStyle: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                    ),
+
                     filled: true,
                     fillColor: const Color(0xFFF4F5F8),
+
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: kIosSeparator),
                     ),
+
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: kIosSeparator),
+                    ),
+
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                        color: AppColors.navyDeep,
+                        width: 1.4,
+                      ),
                     ),
                   ),
                 ),
@@ -964,16 +1249,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.info_outline_rounded,
-                        size: 15, color: AppColors.skyBlue),
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      size: 15,
+                      color: AppColors.skyBlue,
+                    ),
                     const SizedBox(width: 7),
                     Expanded(
                       child: Text(
                         _scope == SearchScope.videos
                             ? 'Video-audio matching is a UI prototype and is not connected yet.'
-                            : 'Voice recording is a UI prototype; transcription is not connected yet.',
+                            : 'Speak a short search phrase. You can edit the transcript before searching.',
                         style: const TextStyle(
-                            fontSize: 11.5, color: AppColors.textSecondary),
+                          fontSize: 11.5,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ),
                   ],
@@ -998,21 +1288,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               width: 9,
               height: 9,
               decoration: const BoxDecoration(
-                  color: AppColors.errorRed, shape: BoxShape.circle),
+                color: AppColors.errorRed,
+                shape: BoxShape.circle,
+              ),
             ),
             const SizedBox(width: 8),
-            const Text('Recording',
-                style: TextStyle(
-                    color: AppColors.errorRed,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700)),
+            const Text(
+              'Recording',
+              style: TextStyle(
+                color: AppColors.errorRed,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(width: 10),
-            Text(_timeLabel,
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: [FontFeature.tabularFigures()])),
+            Text(
+              _timeLabel,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
           ],
         );
       case VoiceState.transcribing:
@@ -1023,32 +1321,42 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               width: 14,
               height: 14,
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppColors.navyDeep),
+                strokeWidth: 2,
+                color: AppColors.navyDeep,
+              ),
             ),
             SizedBox(width: 10),
-            Text('Converting speech to text…',
-                style: TextStyle(
-                    color: AppColors.textSecondary, fontSize: 13.5)),
+            Text(
+              'Converting speech to text…',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+            ),
           ],
         );
       case VoiceState.done:
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.check_circle_rounded,
-                size: 16, color: AppColors.mintAccent),
+            const Icon(
+              Icons.check_circle_rounded,
+              size: 16,
+              color: AppColors.mintAccent,
+            ),
             const SizedBox(width: 7),
-            Text('Recorded $_timeLabel',
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600)),
+            Text(
+              'Recorded $_timeLabel',
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         );
       case VoiceState.idle:
-        return Text('Speaking in $_langLabel',
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 13));
+        return Text(
+          'Speaking in $_langLabel',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        );
     }
   }
 
@@ -1075,8 +1383,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 IconButton(
                   tooltip: 'Stop after current step',
                   onPressed: () => setState(() => _cancelAiIndex = true),
-                  icon: const Icon(Icons.stop_circle_outlined,
-                      color: AppColors.errorRed),
+                  icon: const Icon(
+                    Icons.stop_circle_outlined,
+                    color: AppColors.errorRed,
+                  ),
                 ),
             ],
           ),
@@ -1090,7 +1400,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           const SizedBox(height: 8),
           Text(
             _aiStatus,
-            style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -1125,7 +1438,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             icon: Icons.battery_saver_outlined,
             iconBg: AppColors.mintAccent,
             title: 'Background AI indexing',
-            subtitle: 'Runs in small Android slices; low battery blocks background only',
+            subtitle:
+                'Runs in small Android slices; low battery blocks background only',
             showDivider: true,
             trailing: IosSwitch(
               value: _backgroundEnabled,
@@ -1136,7 +1450,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             icon: Icons.translate_rounded,
             iconBg: AppColors.skyBlue,
             title: 'Arabic OCR',
-            subtitle: 'Offline Arabic OCR; manual/20-photo batches always run it when enabled',
+            subtitle:
+                'Offline Arabic OCR; manual/20-photo batches always run it when enabled',
             showDivider: false,
             trailing: IosSwitch(
               value: _arabicOcrEnabled,
@@ -1154,7 +1469,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return const IosCard(
         padding: EdgeInsets.symmetric(vertical: 40),
         child: Center(
-            child: CircularProgressIndicator(color: AppColors.navyDeep)),
+          child: CircularProgressIndicator(color: AppColors.navyDeep),
+        ),
       );
     }
     if (_results.isEmpty) return _buildEmptyResults();
@@ -1173,8 +1489,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         itemBuilder: (_, i) {
           final item = _results[i];
           return GestureDetector(
-            onTap: () => context.push(AppRoutes.detail,
-                extra: {'id': item.id, 'items': _results}),
+            onTap: () => context.push(
+              AppRoutes.detail,
+              extra: {'id': item.id, 'items': _results},
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image(
@@ -1193,66 +1511,72 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildEmptyResults() => IosCard(
-        padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 16),
-        child: Column(
-          children: [
-            Container(
-              width: 62,
-              height: 62,
-              decoration: BoxDecoration(
-                color: AppColors.navyDeep.withValues(alpha: 0.06),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.search_rounded,
-                  size: 30, color: AppColors.navyDeep.withValues(alpha: 0.5)),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              _searchStatus,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 16),
+    child: Column(
+      children: [
+        Container(
+          width: 62,
+          height: 62,
+          decoration: BoxDecoration(
+            color: AppColors.navyDeep.withValues(alpha: 0.06),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.search_rounded,
+            size: 30,
+            color: AppColors.navyDeep.withValues(alpha: 0.5),
+          ),
         ),
-      );
+        const SizedBox(height: 14),
+        Text(
+          _searchStatus,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Empty picking area with a dashed-looking border.
 class DottedPlaceholder extends StatelessWidget {
   final IconData icon;
   final String label;
-  const DottedPlaceholder({
-    super.key,
-    required this.icon,
-    required this.label,
-  });
+  const DottedPlaceholder({super.key, required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) => Container(
-        height: 128,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: AppColors.navyDeep.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: AppColors.navyDeep.withValues(alpha: 0.18), width: 1.4),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 30, color: AppColors.navyDeep),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 13)),
+    height: 128,
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: AppColors.navyDeep.withValues(alpha: 0.03),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(
+        color: AppColors.navyDeep.withValues(alpha: 0.18),
+        width: 1.4,
+      ),
+    ),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 30, color: AppColors.navyDeep),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
             ),
-          ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }

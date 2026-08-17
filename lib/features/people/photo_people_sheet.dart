@@ -72,7 +72,9 @@ class _PhotoPeopleBodyState extends State<_PhotoPeopleBody> {
   }
 
   Future<void> _rename(PersonGroup person) async {
-    final controller = TextEditingController(text: person.isNamed ? person.name : '');
+    final controller = TextEditingController(
+      text: person.isNamed ? person.name : '',
+    );
     final name = await showDialog<String>(
       context: context,
       builder: (context) => Directionality(
@@ -81,7 +83,10 @@ class _PhotoPeopleBodyState extends State<_PhotoPeopleBody> {
           title: const Text('أعطِ الشخص اسمًا'),
           content: TextField(controller: controller, autofocus: true),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء'),
+            ),
             FilledButton(
               onPressed: () => Navigator.pop(context, controller.text.trim()),
               child: const Text('حفظ'),
@@ -96,7 +101,6 @@ class _PhotoPeopleBodyState extends State<_PhotoPeopleBody> {
     final people = await _repository.peopleForAsset(widget.item.id);
     if (mounted) setState(() => _people = people);
   }
-
 
   Future<void> _assignToExisting(PersonGroup person) async {
     final all = await _repository.allPeople(visibleOnly: false);
@@ -178,8 +182,10 @@ class _PhotoPeopleBodyState extends State<_PhotoPeopleBody> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('الأشخاص في الصورة',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const Text(
+              'الأشخاص في الصورة',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 6),
             Text(_status),
             const SizedBox(height: 14),
@@ -197,11 +203,11 @@ class _PhotoPeopleBodyState extends State<_PhotoPeopleBody> {
                   itemBuilder: (context, index) {
                     final person = people[index];
                     return ListTile(
-                      leading: CircleAvatar(
-                        child: Text('${index + 1}'),
-                      ),
+                      leading: CircleAvatar(child: Text('${index + 1}')),
                       title: Text(person.name),
-                      subtitle: Text('${person.photoCount} صورة في ألبومه الذكي'),
+                      subtitle: Text(
+                        '${person.photoCount} صورة في ألبومه الذكي',
+                      ),
                       trailing: PopupMenuButton<String>(
                         tooltip: 'خيارات الشخص',
                         onSelected: (action) {
@@ -211,7 +217,9 @@ class _PhotoPeopleBodyState extends State<_PhotoPeopleBody> {
                         itemBuilder: (_) => [
                           PopupMenuItem(
                             value: 'rename',
-                            child: Text(person.isNamed ? 'تعديل الاسم' : 'تسمية الشخص'),
+                            child: Text(
+                              person.isNamed ? 'تعديل الاسم' : 'تسمية الشخص',
+                            ),
                           ),
                           const PopupMenuItem(
                             value: 'assign',

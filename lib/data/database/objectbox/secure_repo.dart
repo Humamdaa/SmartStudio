@@ -2,6 +2,7 @@ import 'package:objectbox/objectbox.dart';
 import '../../../objectbox.g.dart';
 import 'entities.dart';
 import 'objectbox_store.dart';
+
 class SecureRepo {
   final ObjectBoxStore _store;
   SecureRepo(this._store);
@@ -19,9 +20,10 @@ class SecureRepo {
 
   bool isSecured(String originalAssetId) {
     return _box
-        .query(SecureFile_.originalAssetId.equals(originalAssetId))
-        .build()
-        .findFirst() != null;
+            .query(SecureFile_.originalAssetId.equals(originalAssetId))
+            .build()
+            .findFirst() !=
+        null;
   }
 
   SecureFile? getByOriginalId(String originalAssetId) {

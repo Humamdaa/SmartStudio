@@ -43,8 +43,8 @@ class PersonGroup {
       coverFaceJpeg: rawCover is Uint8List
           ? rawCover
           : rawCover is List<int>
-              ? Uint8List.fromList(rawCover)
-              : null,
+          ? Uint8List.fromList(rawCover)
+          : null,
       coverQuality: (row['cover_quality'] as num?)?.toDouble() ?? 0,
       centroid: decodeEmbedding(row['centroid']),
       sampleCount: (row['sample_count'] as num?)?.toInt() ?? 0,

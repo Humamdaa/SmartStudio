@@ -68,9 +68,7 @@ class MediaAnalysisRepo {
     // ObjectBox 5.x يحتاج Float32List للـ vector search
     final f32 = Float32List.fromList(queryEmbedding);
     return _box
-        .query(
-          MediaAnalysis_.embedding.nearestNeighborsF32(f32, limit),
-        )
+        .query(MediaAnalysis_.embedding.nearestNeighborsF32(f32, limit))
         .build()
         .find();
   }
@@ -103,22 +101,26 @@ class MediaAnalysisRepo {
     final existing = getByAssetId(assetId);
     if (existing != null) return; // مسجل مسبقاً
 
-    _box.put(MediaAnalysis(
-      assetId: assetId,
-      analyzedAt: DateTime.now(),
-      isAnalyzed: false,
-    ));
+    _box.put(
+      MediaAnalysis(
+        assetId: assetId,
+        analyzedAt: DateTime.now(),
+        isAnalyzed: false,
+      ),
+    );
   }
 
   // ─────────────────────────────────────────
   // تخزين نتيجة OCR والـ labels
   // ─────────────────────────────────────────
-  void saveOcrResult(String assetId, {
+  void saveOcrResult(
+    String assetId, {
     String? text,
     String? sentiment,
     List<String>? labels,
   }) {
-    final item = getByAssetId(assetId) ??
+    final item =
+        getByAssetId(assetId) ??
         MediaAnalysis(assetId: assetId, analyzedAt: DateTime.now());
 
     item.extractedText = text;
@@ -131,7 +133,8 @@ class MediaAnalysisRepo {
   // ─────────────────────────────────────────
   // تخزين الـ embedding — يقبل List<double> ويحوله لـ Float32List
   void saveEmbedding(String assetId, List<double> embedding) {
-    final item = getByAssetId(assetId) ??
+    final item =
+        getByAssetId(assetId) ??
         MediaAnalysis(assetId: assetId, analyzedAt: DateTime.now());
 
     item.embedding = Float32List.fromList(embedding);

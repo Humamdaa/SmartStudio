@@ -10,8 +10,8 @@ class PersonRepo {
 
   PersonRepo(this._store);
 
-  Box<PersonGroup>  get _groupBox  => _store.personBox;
-  Box<PersonAsset>  get _assetBox  => _store.personAssetBox;
+  Box<PersonGroup> get _groupBox => _store.personBox;
+  Box<PersonAsset> get _assetBox => _store.personAssetBox;
 
   // إنشاء مجموعة وجه جديدة
   PersonGroup createGroup(String name, {String? coverAssetId}) {

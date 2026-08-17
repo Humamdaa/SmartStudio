@@ -26,12 +26,11 @@ class FolderAlbumsState {
     List<AlbumInfo>? albums,
     bool? loading,
     String? error,
-  }) =>
-      FolderAlbumsState(
-        albums: albums ?? this.albums,
-        loading: loading ?? this.loading,
-        error: error,
-      );
+  }) => FolderAlbumsState(
+    albums: albums ?? this.albums,
+    loading: loading ?? this.loading,
+    error: error,
+  );
 }
 
 class FolderAlbumsController extends StateNotifier<FolderAlbumsState> {
@@ -54,8 +53,8 @@ class FolderAlbumsController extends StateNotifier<FolderAlbumsState> {
 
 final folderAlbumsProvider =
     StateNotifierProvider<FolderAlbumsController, FolderAlbumsState>((ref) {
-  return FolderAlbumsController(ref.read(mediaRepositoryProvider));
-});
+      return FolderAlbumsController(ref.read(mediaRepositoryProvider));
+    });
 
 class FolderAlbumsTab extends ConsumerStatefulWidget {
   const FolderAlbumsTab({super.key});
@@ -71,7 +70,8 @@ class _FolderAlbumsTabState extends ConsumerState<FolderAlbumsTab> {
     // نعيد التحميل كل مرة نفتح فيها التبويب — بدونها كانت الألبومات
     // تضل تعرض صور محذوفة لأن القائمة كانت تتحمّل مرة وحدة بس.
     WidgetsBinding.instance.addPostFrameCallback(
-        (_) => ref.read(folderAlbumsProvider.notifier).load());
+      (_) => ref.read(folderAlbumsProvider.notifier).load(),
+    );
   }
 
   @override
@@ -87,8 +87,10 @@ class _FolderAlbumsTabState extends ConsumerState<FolderAlbumsTab> {
 
     if (state.error != null) {
       return Center(
-        child: Text(state.error!,
-            style: const TextStyle(color: AppColors.textSecondary)),
+        child: Text(
+          state.error!,
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
       );
     }
 
@@ -100,24 +102,35 @@ class _FolderAlbumsTabState extends ConsumerState<FolderAlbumsTab> {
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Row(
             children: [
-              Text('${albums.length} folders · hold to delete',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 12)),
+              Text(
+                '${albums.length} folders · hold to delete',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
               const Spacer(),
               ElevatedButton.icon(
                 onPressed: () => _createAlbum(context, ref),
-                icon: const Icon(Icons.create_new_folder_outlined,
-                    color: Colors.white, size: 18),
-                label: const Text('New Album',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
+                icon: const Icon(
+                  Icons.create_new_folder_outlined,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                label: const Text(
+                  'New Album',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.navyDeep,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(100)),
+                    borderRadius: BorderRadius.circular(100),
+                  ),
                 ),
               ),
             ],
@@ -160,7 +173,10 @@ class _FolderAlbumsTabState extends ConsumerState<FolderAlbumsTab> {
   // الألبوم مجلد حقيقي، وحذفه معناه حذف كل الصور اللي جوّاه —
   // عملية ما إلها رجعة، فمنوضّح العدد ومنطلب تأكيد صريح.
   Future<void> _confirmDeleteAlbum(
-      BuildContext context, WidgetRef ref, AlbumInfo album) async {
+    BuildContext context,
+    WidgetRef ref,
+    AlbumInfo album,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -183,33 +199,43 @@ class _FolderAlbumsTabState extends ConsumerState<FolderAlbumsTab> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Delete',
-                style: TextStyle(color: AppColors.errorRed)),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.errorRed),
+            ),
           ),
         ],
       ),
     );
     if (confirmed != true || !context.mounted) return;
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Deleting album…')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Deleting album…')));
 
     // أندرويد 11+ بيعرض نافذة تأكيد نظام كمان — المستخدم لازم يوافق
-    final deleted = await AlbumService.instance
-        .deleteAlbum(album.path, knownCount: album.count);
+    final deleted = await AlbumService.instance.deleteAlbum(
+      album.path,
+      knownCount: album.count,
+    );
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(deleted > 0
-          ? 'Deleted "${album.name}" ($deleted item(s))'
-          : 'Nothing was deleted'),
-      backgroundColor: deleted > 0 ? null : AppColors.errorRed,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          deleted > 0
+              ? 'Deleted "${album.name}" ($deleted item(s))'
+              : 'Nothing was deleted',
+        ),
+        backgroundColor: deleted > 0 ? null : AppColors.errorRed,
+      ),
+    );
 
     if (deleted > 0) {
       ref.read(folderAlbumsProvider.notifier).load();
@@ -245,8 +271,9 @@ class _FolderAlbumsTabState extends ConsumerState<FolderAlbumsTab> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, controller.text.trim()),
             child: const Text('Next'),
@@ -263,20 +290,27 @@ class _FolderAlbumsTabState extends ConsumerState<FolderAlbumsTab> {
     );
     if (picked == null || picked.isEmpty || !context.mounted) return;
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Creating album…')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Creating album…')));
 
-    final ok = await AlbumService.instance
-        .moveToNewAlbum(assets: picked, albumName: name);
+    final ok = await AlbumService.instance.moveToNewAlbum(
+      assets: picked,
+      albumName: name,
+    );
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(ok
-          ? 'Album "$name" created with ${picked.length} item(s)'
-          : 'Could not create the album'),
-      backgroundColor: ok ? null : AppColors.errorRed,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Album "$name" created with ${picked.length} item(s)'
+              : 'Could not create the album',
+        ),
+        backgroundColor: ok ? null : AppColors.errorRed,
+      ),
+    );
 
     if (ok) {
       ref.read(folderAlbumsProvider.notifier).load();
@@ -349,8 +383,11 @@ class _FavoritesCard extends StatelessWidget {
                           color: Colors.black.withOpacity(0.45),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.favorite_rounded,
-                            color: Colors.white, size: 18),
+                        child: const Icon(
+                          Icons.favorite_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ),
                     ),
                   ],
@@ -361,20 +398,27 @@ class _FavoritesCard extends StatelessWidget {
           const SizedBox(height: 10),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 2),
-            child: Text('Favorites',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary)),
+            child: Text(
+              'Favorites',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
           const SizedBox(height: 2),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Text('$count items',
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.textSecondary)),
+            child: Text(
+              '$count items',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
@@ -382,17 +426,17 @@ class _FavoritesCard extends StatelessWidget {
   }
 
   Widget _gradient() => Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppColors.navyDeep, AppColors.skyBlue],
-          ),
-        ),
-        child: const Center(
-          child: Icon(Icons.favorite_rounded, color: Colors.white, size: 42),
-        ),
-      );
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [AppColors.navyDeep, AppColors.skyBlue],
+      ),
+    ),
+    child: const Center(
+      child: Icon(Icons.favorite_rounded, color: Colors.white, size: 42),
+    ),
+  );
 }
 
 class _AlbumCard extends StatelessWidget {
@@ -479,8 +523,11 @@ class _AlbumCard extends StatelessWidget {
     return Container(
       color: AppColors.navyDeep.withOpacity(0.06),
       child: const Center(
-        child: Icon(Icons.photo_album_outlined,
-            color: AppColors.textHint, size: 40),
+        child: Icon(
+          Icons.photo_album_outlined,
+          color: AppColors.textHint,
+          size: 40,
+        ),
       ),
     );
   }

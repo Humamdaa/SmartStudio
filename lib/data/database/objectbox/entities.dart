@@ -10,7 +10,7 @@ class MediaAnalysis {
   String assetId;
   String? aiCaption;
   String? extractedText;
-  String? sentiment;      // 'positive' | 'negative' | 'neutral'
+  String? sentiment; // 'positive' | 'negative' | 'neutral'
   double? credibilityScore;
   String? labelsJson;
 
@@ -59,8 +59,8 @@ class PersonGroup {
   @Id()
   int id = 0;
 
-  String groupId;    // UUID نولده نحن
-  String name;       // اسم الشخص (قابل للتعديل)
+  String groupId; // UUID نولده نحن
+  String name; // اسم الشخص (قابل للتعديل)
   String? coverAssetId;
   DateTime createdAt;
 
@@ -87,10 +87,7 @@ class PersonAsset {
   // ToOne = many-to-one: صورة تنتمي لشخص واحد
   final person = ToOne<PersonGroup>();
 
-  PersonAsset({
-    this.id = 0,
-    required this.assetId,
-  });
+  PersonAsset({this.id = 0, required this.assetId});
 }
 
 @Entity()
@@ -154,11 +151,7 @@ class CustomAlbumItem {
 
   final album = ToOne<CustomAlbum>();
 
-  CustomAlbumItem({
-    this.id = 0,
-    required this.assetId,
-    required this.addedAt,
-  });
+  CustomAlbumItem({this.id = 0, required this.assetId, required this.addedAt});
 }
 
 @Entity()
@@ -172,11 +165,7 @@ class DuplicateGroup {
   @Backlink('group')
   final members = ToMany<DuplicateMember>();
 
-  DuplicateGroup({
-    this.id = 0,
-    required this.groupHash,
-    required this.foundAt,
-  });
+  DuplicateGroup({this.id = 0, required this.groupHash, required this.foundAt});
 }
 
 @Entity()
@@ -186,7 +175,7 @@ class DuplicateMember {
 
   String assetId;
   String phash;
-  int hammingDistance;  // المسافة عن الـ groupHash
+  int hammingDistance; // المسافة عن الـ groupHash
 
   final group = ToOne<DuplicateGroup>();
 

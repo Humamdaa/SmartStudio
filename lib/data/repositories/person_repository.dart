@@ -4,7 +4,7 @@ import '../models/person_group.dart';
 
 class PersonRepository {
   PersonRepository({DatabaseHelper? database})
-      : _database = database ?? DatabaseHelper.instance;
+    : _database = database ?? DatabaseHelper.instance;
 
   final DatabaseHelper _database;
 

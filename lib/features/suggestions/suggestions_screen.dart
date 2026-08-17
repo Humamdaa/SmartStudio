@@ -71,8 +71,9 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
     final top = _items.isEmpty ? null : _items[_topIndex];
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: kIosGroupedBg,
         body: SafeArea(
@@ -107,34 +108,44 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                     AspectRatio(
                       aspectRatio: isProfile ? 1 : 16 / 9,
                       child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(isProfile ? 400 : 12),
+                        borderRadius: BorderRadius.circular(
+                          isProfile ? 400 : 12,
+                        ),
                         child: Container(
                           decoration: BoxDecoration(
                             color: AppColors.navyDeep.withValues(alpha: 0.07),
                             border: Border.all(
-                                color: AppColors.mintAccent, width: 2.5),
-                            borderRadius:
-                                BorderRadius.circular(isProfile ? 400 : 12),
+                              color: AppColors.mintAccent,
+                              width: 2.5,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              isProfile ? 400 : 12,
+                            ),
                           ),
                           child: _loading
                               ? const Center(
                                   child: CircularProgressIndicator(
-                                      color: AppColors.navyDeep))
+                                    color: AppColors.navyDeep,
+                                  ),
+                                )
                               : top == null
-                                  ? const Center(
-                                      child: Icon(Icons.image_outlined,
-                                          size: 42,
-                                          color: AppColors.textHint))
-                                  : Image(
-                                      image: AssetEntityImageProvider(
-                                        top.asset,
-                                        isOriginal: false,
-                                        thumbnailSize:
-                                            const ThumbnailSize.square(600),
-                                      ),
-                                      fit: BoxFit.cover,
+                              ? const Center(
+                                  child: Icon(
+                                    Icons.image_outlined,
+                                    size: 42,
+                                    color: AppColors.textHint,
+                                  ),
+                                )
+                              : Image(
+                                  image: AssetEntityImageProvider(
+                                    top.asset,
+                                    isOriginal: false,
+                                    thumbnailSize: const ThumbnailSize.square(
+                                      600,
                                     ),
+                                  ),
+                                  fit: BoxFit.cover,
+                                ),
                         ),
                       ),
                     ),
@@ -178,18 +189,23 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed:
-                                _items.length < 2 ? null : _nextSuggestion,
+                            onPressed: _items.length < 2
+                                ? null
+                                : _nextSuggestion,
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: kIosSeparator),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(22)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: const Text('Another pick',
-                                style: TextStyle(
-                                    color: AppColors.navyDeep, fontSize: 13.5)),
+                            child: const Text(
+                              'Another pick',
+                              style: TextStyle(
+                                color: AppColors.navyDeep,
+                                fontSize: 13.5,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -198,20 +214,22 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                             onPressed: top == null
                                 ? null
                                 : () => context.push(
-                                      AppRoutes.editing,
-                                      extra: top.asset.id,
-                                    ),
+                                    AppRoutes.editing,
+                                    extra: top.asset.id,
+                                  ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.navyDeep,
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(22)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             child: Text(
                               isProfile ? 'Edit for profile' : 'Edit for cover',
                               style: const TextStyle(
-                                  color: Colors.white, fontSize: 13.5),
+                                color: Colors.white,
+                                fontSize: 13.5,
+                              ),
                             ),
                           ),
                         ),
@@ -242,12 +260,14 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                             Expanded(
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(
-                                    isProfile ? 400 : 12),
+                                  isProfile ? 400 : 12,
+                                ),
                                 child: Container(
                                   width: double.infinity,
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(
-                                        isProfile ? 400 : 12),
+                                      isProfile ? 400 : 12,
+                                    ),
                                     border: Border.all(
                                       color: active
                                           ? AppColors.mintAccent
@@ -259,8 +279,9 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                                     image: AssetEntityImageProvider(
                                       s.asset,
                                       isOriginal: false,
-                                      thumbnailSize:
-                                          const ThumbnailSize.square(300),
+                                      thumbnailSize: const ThumbnailSize.square(
+                                        300,
+                                      ),
                                     ),
                                     fit: BoxFit.cover,
                                   ),
@@ -268,13 +289,16 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            Text('${s.score.round()}',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: active
-                                        ? AppColors.navyDeep
-                                        : AppColors.textSecondary)),
+                            Text(
+                              '${s.score.round()}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: active
+                                    ? AppColors.navyDeep
+                                    : AppColors.textSecondary,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -336,24 +360,31 @@ class _ScorePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-            color: AppColors.navyDeep.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(10),
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.navyDeep.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value == null ? '—' : '$value',
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: AppColors.navyDeep,
+            ),
           ),
-          child: Column(
-            children: [
-              Text(value == null ? '—' : '$value',
-                  style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.navyDeep)),
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.textSecondary)),
-            ],
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+            ),
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 }

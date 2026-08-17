@@ -40,8 +40,7 @@ class DeviceHealthService {
       // A vendor without battery telemetry should not block indexing.
     }
     try {
-      thermalStatus =
-          await _channel.invokeMethod<int>('thermalStatus') ?? -1;
+      thermalStatus = await _channel.invokeMethod<int>('thermalStatus') ?? -1;
     } catch (_) {
       // Android below API 29 has no public thermal status API.
     }
@@ -57,7 +56,8 @@ class DeviceHealthService {
     if (checkThermal && thermalStatus >= 3) {
       return IndexDeviceGate(
         allowed: false,
-        reason: 'توقفت مؤقتًا حتى يبرد الجهاز، ثم يمكنك المتابعة من نفس المكان.',
+        reason:
+            'توقفت مؤقتًا حتى يبرد الجهاز، ثم يمكنك المتابعة من نفس المكان.',
         batteryLevel: batteryLevel,
         thermalStatus: thermalStatus,
       );

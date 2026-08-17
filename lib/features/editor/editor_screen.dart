@@ -98,9 +98,14 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
   double _textSize = 0.09;
 
   static const _palette = [
-    Color(0xFFFF3B30), Color(0xFFFFCC00), Color(0xFF34C759),
-    Color(0xFF0FDFAF), Color(0xFF007AFF), Color(0xFFAF52DE),
-    Colors.white, Colors.black,
+    Color(0xFFFF3B30),
+    Color(0xFFFFCC00),
+    Color(0xFF34C759),
+    Color(0xFF0FDFAF),
+    Color(0xFF007AFF),
+    Color(0xFFAF52DE),
+    Colors.white,
+    Colors.black,
   ];
 
   @override
@@ -157,35 +162,35 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
       _retouches.isNotEmpty;
 
   void _reset() => setState(() {
-        _quarterTurns = 0;
-        _flipH = false;
-        _flipV = false;
-        _brightness = 0;
-        _contrast = 1;
-        _saturation = 1;
-        _warmth = 0;
-        _crop = const Rect.fromLTRB(0, 0, 1, 1);
-        _strokes.clear();
-        _texts.clear();
-        _retouches.clear();
-      });
+    _quarterTurns = 0;
+    _flipH = false;
+    _flipV = false;
+    _brightness = 0;
+    _contrast = 1;
+    _saturation = 1;
+    _warmth = 0;
+    _crop = const Rect.fromLTRB(0, 0, 1, 1);
+    _strokes.clear();
+    _texts.clear();
+    _retouches.clear();
+  });
 
   /// تراجع عن آخر إضافة حسب الأداة الحالية.
   void _undo() => setState(() {
-        switch (_tool) {
-          case _Tool.draw:
-            if (_strokes.isNotEmpty) _strokes.removeLast();
-            break;
-          case _Tool.text:
-            if (_texts.isNotEmpty) _texts.removeLast();
-            break;
-          case _Tool.retouch:
-            if (_retouches.isNotEmpty) _retouches.removeLast();
-            break;
-          default:
-            break;
-        }
-      });
+    switch (_tool) {
+      case _Tool.draw:
+        if (_strokes.isNotEmpty) _strokes.removeLast();
+        break;
+      case _Tool.text:
+        if (_texts.isNotEmpty) _texts.removeLast();
+        break;
+      case _Tool.retouch:
+        if (_retouches.isNotEmpty) _retouches.removeLast();
+        break;
+      default:
+        break;
+    }
+  });
 
   /// إعدادات المعاينة (فيها إطار التحديد)، والتصدير بيستخدم
   /// نسخة بدون تحديد حتى ما ينحفظ الإطار مع الصورة.
@@ -193,22 +198,19 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
   _EditSettings get _exportSettings => _settingsWith(null);
 
   _EditSettings _settingsWith(int? selected) => _EditSettings(
-        selectedText: selected,
-        quarterTurns: _quarterTurns,
-        flipH: _flipH,
-        flipV: _flipV,
-        brightness: _brightness,
-        contrast: _contrast,
-        saturation: _saturation,
-        warmth: _warmth,
-        crop: _crop,
-        strokes: [
-          ..._strokes,
-          if (_activeStroke != null) _activeStroke!,
-        ],
-        texts: _texts,
-        retouches: _retouches,
-      );
+    selectedText: selected,
+    quarterTurns: _quarterTurns,
+    flipH: _flipH,
+    flipV: _flipV,
+    brightness: _brightness,
+    contrast: _contrast,
+    saturation: _saturation,
+    warmth: _warmth,
+    crop: _crop,
+    strokes: [..._strokes, if (_activeStroke != null) _activeStroke!],
+    texts: _texts,
+    retouches: _retouches,
+  );
 
   // ── الحفظ: نرسم بنفس الإعدادات على canvas ونصدّر PNG ─────────
   Future<void> _save() async {
@@ -235,8 +237,9 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
       final rendered = await picture.toImage(outW, outH);
       picture.dispose();
 
-      final byteData =
-          await rendered.toByteData(format: ui.ImageByteFormat.png);
+      final byteData = await rendered.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       rendered.dispose();
       if (byteData == null) throw Exception('encode failed');
 
@@ -275,12 +278,15 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
         content: const Text('Your edits will be lost.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx, false),
-              child: const Text('Keep editing')),
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Keep editing'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Discard',
-                style: TextStyle(color: AppColors.errorRed)),
+            child: const Text(
+              'Discard',
+              style: TextStyle(color: AppColors.errorRed),
+            ),
           ),
         ],
       ),
@@ -298,8 +304,9 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
         if (leave && context.mounted) context.pop();
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light
-            .copyWith(statusBarColor: Colors.transparent),
+        value: SystemUiOverlayStyle.light.copyWith(
+          statusBarColor: Colors.transparent,
+        ),
         child: Scaffold(
           backgroundColor: Colors.black,
           body: SafeArea(
@@ -331,24 +338,31 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
                   if (leave && mounted) context.pop();
                 },
               ),
-              const Text('Edit',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700)),
+              const Text(
+                'Edit',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const Spacer(),
               if (_hasEdits && !_saving)
                 compact
                     ? IconButton(
                         tooltip: 'Reset edits',
                         onPressed: _reset,
-                        icon: const Icon(Icons.restart_alt_rounded,
-                            color: Colors.white70),
+                        icon: const Icon(
+                          Icons.restart_alt_rounded,
+                          color: Colors.white70,
+                        ),
                       )
                     : TextButton(
                         onPressed: _reset,
-                        child: const Text('Reset',
-                            style: TextStyle(color: Colors.white70)),
+                        child: const Text(
+                          'Reset',
+                          style: TextStyle(color: Colors.white70),
+                        ),
                       ),
               const SizedBox(width: 2),
               if (_saving)
@@ -358,7 +372,9 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
                     width: 22,
                     height: 22,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: AppColors.mintAccent),
+                      strokeWidth: 2,
+                      color: AppColors.mintAccent,
+                    ),
                   ),
                 )
               else
@@ -369,11 +385,13 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
                     style: ElevatedButton.styleFrom(
                       minimumSize: Size(compact ? 44 : 94, 40),
                       padding: EdgeInsets.symmetric(
-                          horizontal: compact ? 10 : 14),
+                        horizontal: compact ? 10 : 14,
+                      ),
                       backgroundColor: AppColors.mintAccent,
                       foregroundColor: Colors.black,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
                     ),
                     child: compact
                         ? const Icon(Icons.save_alt_rounded, size: 21)
@@ -382,9 +400,10 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
                             children: [
                               Icon(Icons.save_alt_rounded, size: 18),
                               SizedBox(width: 6),
-                              Text('Save',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w700)),
+                              Text(
+                                'Save',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
                             ],
                           ),
                   ),
@@ -399,18 +418,24 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
   Widget _buildCanvas() {
     if (_loading) {
       return const Center(
-          child: CircularProgressIndicator(color: AppColors.mintAccent));
+        child: CircularProgressIndicator(color: AppColors.mintAccent),
+      );
     }
     if (_error != null || _image == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.broken_image_outlined,
-                color: Colors.white38, size: 48),
+            const Icon(
+              Icons.broken_image_outlined,
+              color: Colors.white38,
+              size: 48,
+            ),
             const SizedBox(height: 12),
-            Text(_error ?? 'Unavailable',
-                style: const TextStyle(color: Colors.white54)),
+            Text(
+              _error ?? 'Unavailable',
+              style: const TextStyle(color: Colors.white54),
+            ),
           ],
         ),
       );
@@ -433,13 +458,13 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
                 onPanStart: _tool == _Tool.draw
                     ? _startStroke
                     : _tool == _Tool.retouch
-                        ? _addRetouch
-                        : null,
+                    ? _addRetouch
+                    : null,
                 onPanUpdate: _tool == _Tool.draw
                     ? _extendStroke
                     : _tool == _Tool.retouch
-                        ? _addRetouch
-                        : null,
+                    ? _addRetouch
+                    : null,
                 onPanEnd: _tool == _Tool.draw ? _endStroke : null,
                 // بوضع النص منستخدم إيماءة scale — بتغطّي التحريك
                 // بإصبع والتكبير بإصبعين بنفس الوقت.
@@ -449,8 +474,9 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
                 onScaleStartAt: _tool == _Tool.text
                     ? (p) => _onTextScaleStart(p, _aspect)
                     : null,
-                onScaleUpdateAt:
-                    _tool == _Tool.text ? _onTextScaleUpdate : null,
+                onScaleUpdateAt: _tool == _Tool.text
+                    ? _onTextScaleUpdate
+                    : null,
               ),
             ),
     );
@@ -467,9 +493,12 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
 
   // ── الرسم ────────────────────────────────────────────────────
   void _startStroke(Offset p) => setState(() {
-        _activeStroke = DrawStroke(
-            points: [p], color: _brushColor, width: _brushWidth);
-      });
+    _activeStroke = DrawStroke(
+      points: [p],
+      color: _brushColor,
+      width: _brushWidth,
+    );
+  });
 
   void _extendStroke(Offset p) {
     if (_activeStroke == null) return;
@@ -477,14 +506,14 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
   }
 
   void _endStroke() => setState(() {
-        if (_activeStroke != null) _strokes.add(_activeStroke!);
-        _activeStroke = null;
-      });
+    if (_activeStroke != null) _strokes.add(_activeStroke!);
+    _activeStroke = null;
+  });
 
   // ── التمويه لإخفاء/إزالة شي ──────────────────────────────────
   void _addRetouch(Offset p) => setState(() {
-        _retouches.add(RetouchBlob(center: p, radius: _retouchRadius));
-      });
+    _retouches.add(RetouchBlob(center: p, radius: _retouchRadius));
+  });
 
   // ── النصوص: تحديد / تحريك / تكبير ────────────────────────────
 
@@ -555,8 +584,9 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
         content: TextField(controller: controller, autofocus: true),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, controller.text.trim()),
             child: const Text('Save'),
@@ -598,8 +628,9 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, controller.text.trim()),
             child: const Text('Add'),
@@ -609,12 +640,9 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
     );
     if (value == null || value.isEmpty || !mounted) return;
     setState(() {
-      _texts.add(TextItem(
-        position: p,
-        text: value,
-        color: _brushColor,
-        size: _textSize,
-      ));
+      _texts.add(
+        TextItem(position: p, text: value, color: _brushColor, size: _textSize),
+      );
       // نحدّده مباشرة حتى يقدر يحرّكه ويكبّره فوراً
       _selectedText = _texts.length - 1;
     });
@@ -713,19 +741,19 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
 
   // ── لوحات الأدوات الجديدة ────────────────────────────────────
   Widget _buildDrawPanel() => Column(
-        children: [
-          _hint('Drag on the photo to draw'),
-          _colorRow(),
-          _Slider(
-            label: 'Brush',
-            value: _brushWidth,
-            min: 0.004,
-            max: 0.06,
-            onChanged: (v) => setState(() => _brushWidth = v),
-          ),
-          _undoRow(_strokes.isNotEmpty),
-        ],
-      );
+    children: [
+      _hint('Drag on the photo to draw'),
+      _colorRow(),
+      _Slider(
+        label: 'Brush',
+        value: _brushWidth,
+        min: 0.004,
+        max: 0.06,
+        onChanged: (v) => setState(() => _brushWidth = v),
+      ),
+      _undoRow(_strokes.isNotEmpty),
+    ],
+  );
 
   Widget _buildTextPanel() {
     final idx = _selectedText;
@@ -733,16 +761,20 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
 
     return Column(
       children: [
-        _hint(sel == null
-            ? 'Tap the photo to add text'
-            : 'Drag to move · pinch to resize'),
+        _hint(
+          sel == null
+              ? 'Tap the photo to add text'
+              : 'Drag to move · pinch to resize',
+        ),
         // اللون يشتغل على النص المحدّد، وإذا ما في تحديد بيصير لون الجديد
-        _colorRow(onPick: (c) {
-          setState(() {
-            _brushColor = c;
-            if (sel != null) sel.color = c;
-          });
-        }),
+        _colorRow(
+          onPick: (c) {
+            setState(() {
+              _brushColor = c;
+              if (sel != null) sel.color = c;
+            });
+          },
+        ),
         _Slider(
           label: 'Size',
           value: sel?.size ?? _textSize,
@@ -762,26 +794,39 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
             children: [
               TextButton.icon(
                 onPressed: _editSelectedText,
-                icon: const Icon(Icons.edit_outlined,
-                    size: 18, color: Colors.white70),
-                label: const Text('Edit',
-                    style: TextStyle(color: Colors.white70, fontSize: 12.5)),
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: Colors.white70,
+                ),
+                label: const Text(
+                  'Edit',
+                  style: TextStyle(color: Colors.white70, fontSize: 12.5),
+                ),
               ),
               TextButton.icon(
                 onPressed: _deleteSelectedText,
-                icon: const Icon(Icons.delete_outline_rounded,
-                    size: 18, color: AppColors.errorRed),
-                label: const Text('Delete',
-                    style:
-                        TextStyle(color: AppColors.errorRed, fontSize: 12.5)),
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 18,
+                  color: AppColors.errorRed,
+                ),
+                label: const Text(
+                  'Delete',
+                  style: TextStyle(color: AppColors.errorRed, fontSize: 12.5),
+                ),
               ),
               TextButton.icon(
                 onPressed: () => setState(() => _selectedText = null),
-                icon: const Icon(Icons.check_rounded,
-                    size: 18, color: AppColors.mintAccent),
-                label: const Text('Done',
-                    style:
-                        TextStyle(color: AppColors.mintAccent, fontSize: 12.5)),
+                icon: const Icon(
+                  Icons.check_rounded,
+                  size: 18,
+                  color: AppColors.mintAccent,
+                ),
+                label: const Text(
+                  'Done',
+                  style: TextStyle(color: AppColors.mintAccent, fontSize: 12.5),
+                ),
               ),
             ],
           )
@@ -792,65 +837,72 @@ class _EditingScreenState extends ConsumerState<EditingScreen> {
   }
 
   Widget _buildRetouchPanel() => Column(
-        children: [
-          _hint('Drag over what you want to hide'),
-          _Slider(
-            label: 'Size',
-            value: _retouchRadius,
-            min: 0.02,
-            max: 0.2,
-            onChanged: (v) => setState(() => _retouchRadius = v),
-          ),
-          _undoRow(_retouches.isNotEmpty),
-        ],
-      );
+    children: [
+      _hint('Drag over what you want to hide'),
+      _Slider(
+        label: 'Size',
+        value: _retouchRadius,
+        min: 0.02,
+        max: 0.2,
+        onChanged: (v) => setState(() => _retouchRadius = v),
+      ),
+      _undoRow(_retouches.isNotEmpty),
+    ],
+  );
 
   Widget _hint(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text,
-            style: const TextStyle(color: Colors.white38, fontSize: 11.5)),
-      );
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      text,
+      style: const TextStyle(color: Colors.white38, fontSize: 11.5),
+    ),
+  );
 
   Widget _undoRow(bool enabled) => TextButton.icon(
-        onPressed: enabled ? _undo : null,
-        icon: Icon(Icons.undo_rounded,
-            size: 18, color: enabled ? Colors.white70 : Colors.white24),
-        label: Text('Undo',
-            style: TextStyle(
-                color: enabled ? Colors.white70 : Colors.white24,
-                fontSize: 12.5)),
-      );
+    onPressed: enabled ? _undo : null,
+    icon: Icon(
+      Icons.undo_rounded,
+      size: 18,
+      color: enabled ? Colors.white70 : Colors.white24,
+    ),
+    label: Text(
+      'Undo',
+      style: TextStyle(
+        color: enabled ? Colors.white70 : Colors.white24,
+        fontSize: 12.5,
+      ),
+    ),
+  );
 
   /// [onPick] بيسمح لأداة النص تغيّر لون النص المحدّد بدل لون الفرشاة.
   Widget _colorRow({ValueChanged<Color>? onPick}) => SizedBox(
-        height: 34,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          shrinkWrap: true,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          children: _palette.map((c) {
-            final active = c == _brushColor;
-            return GestureDetector(
-              onTap: () => onPick != null
-                  ? onPick(c)
-                  : setState(() => _brushColor = c),
-              child: Container(
-                width: 28,
-                height: 28,
-                margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                decoration: BoxDecoration(
-                  color: c,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: active ? AppColors.mintAccent : Colors.white24,
-                    width: active ? 3 : 1,
-                  ),
-                ),
+    height: 34,
+    child: ListView(
+      scrollDirection: Axis.horizontal,
+      shrinkWrap: true,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      children: _palette.map((c) {
+        final active = c == _brushColor;
+        return GestureDetector(
+          onTap: () =>
+              onPick != null ? onPick(c) : setState(() => _brushColor = c),
+          child: Container(
+            width: 28,
+            height: 28,
+            margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+            decoration: BoxDecoration(
+              color: c,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: active ? AppColors.mintAccent : Colors.white24,
+                width: active ? 3 : 1,
               ),
-            );
-          }).toList(),
-        ),
-      );
+            ),
+          ),
+        );
+      }).toList(),
+    ),
+  );
 
   Widget _buildCropPanel() {
     return Column(
@@ -1095,7 +1147,10 @@ class _EditSettings {
       // إطار التحديد — معاينة فقط
       if (selectedText == i) {
         final box = Rect.fromLTWH(
-          topLeft.dx, topLeft.dy, painter.width, painter.height,
+          topLeft.dx,
+          topLeft.dy,
+          painter.width,
+          painter.height,
         ).inflate(out.width * 0.012);
         canvas.drawRRect(
           RRect.fromRectAndRadius(box, Radius.circular(out.width * 0.012)),
@@ -1118,7 +1173,11 @@ class _EditSettings {
             fontSize: t.size * outWidth,
             fontWeight: FontWeight.w700,
             shadows: const [
-              Shadow(color: Colors.black54, blurRadius: 6, offset: Offset(0, 1)),
+              Shadow(
+                color: Colors.black54,
+                blurRadius: 6,
+                offset: Offset(0, 1),
+              ),
             ],
           ),
         ),
@@ -1234,16 +1293,17 @@ class _InteractivePreview extends StatelessWidget {
         builder: (context, c) {
           // الودجت نفسه بنسبة الخرج، فالتحويل مجرّد قسمة
           Offset toNorm(Offset local) => Offset(
-                (local.dx / c.maxWidth).clamp(0.0, 1.0),
-                (local.dy / c.maxHeight).clamp(0.0, 1.0),
-              );
+            (local.dx / c.maxWidth).clamp(0.0, 1.0),
+            (local.dy / c.maxHeight).clamp(0.0, 1.0),
+          );
 
           final useScale = onScaleStartAt != null || onScaleUpdateAt != null;
 
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown:
-                onTapAt == null ? null : (d) => onTapAt!(toNorm(d.localPosition)),
+            onTapDown: onTapAt == null
+                ? null
+                : (d) => onTapAt!(toNorm(d.localPosition)),
             // scale و pan ما بينفعوا مع بعض بنفس الـ GestureDetector
             onScaleStart: !useScale
                 ? null
@@ -1251,12 +1311,12 @@ class _InteractivePreview extends StatelessWidget {
             onScaleUpdate: !useScale
                 ? null
                 : (d) => onScaleUpdateAt?.call(
-                      Offset(
-                        d.focalPointDelta.dx / c.maxWidth,
-                        d.focalPointDelta.dy / c.maxHeight,
-                      ),
-                      d.scale,
+                    Offset(
+                      d.focalPointDelta.dx / c.maxWidth,
+                      d.focalPointDelta.dy / c.maxHeight,
                     ),
+                    d.scale,
+                  ),
             onPanStart: useScale || onPanStart == null
                 ? null
                 : (d) => onPanStart!(toNorm(d.localPosition)),
@@ -1335,7 +1395,9 @@ class _CropView extends StatelessWidget {
         );
         final out = full.outputSize(image);
         final scale = math.min(
-            constraints.maxWidth / out.width, constraints.maxHeight / out.height);
+          constraints.maxWidth / out.width,
+          constraints.maxHeight / out.height,
+        );
         final dispW = out.width * scale;
         final dispH = out.height * scale;
         final dx = (constraints.maxWidth - dispW) / 2;
@@ -1376,11 +1438,11 @@ class _CropOverlay extends StatelessWidget {
   });
 
   Rect get _cropPx => Rect.fromLTRB(
-        imageRect.left + crop.left * imageRect.width,
-        imageRect.top + crop.top * imageRect.height,
-        imageRect.left + crop.right * imageRect.width,
-        imageRect.top + crop.bottom * imageRect.height,
-      );
+    imageRect.left + crop.left * imageRect.width,
+    imageRect.top + crop.top * imageRect.height,
+    imageRect.left + crop.right * imageRect.width,
+    imageRect.top + crop.bottom * imageRect.height,
+  );
 
   void _emit(Rect px) {
     // أدنى مقاس للمستطيل حتى ما ينهار
@@ -1442,27 +1504,43 @@ class _CropOverlay extends StatelessWidget {
               final dx = moved.left < imageRect.left
                   ? imageRect.left - moved.left
                   : moved.right > imageRect.right
-                      ? imageRect.right - moved.right
-                      : 0.0;
+                  ? imageRect.right - moved.right
+                  : 0.0;
               final dy = moved.top < imageRect.top
                   ? imageRect.top - moved.top
                   : moved.bottom > imageRect.bottom
-                      ? imageRect.bottom - moved.bottom
-                      : 0.0;
+                  ? imageRect.bottom - moved.bottom
+                  : 0.0;
               moved = moved.shift(Offset(dx, dy));
               _emit(moved);
             },
             child: const SizedBox.expand(),
           ),
         ),
-        corner(Alignment.topLeft,
-            (d) => _emit(Rect.fromLTRB(px.left + d.dx, px.top + d.dy, px.right, px.bottom))),
-        corner(Alignment.topRight,
-            (d) => _emit(Rect.fromLTRB(px.left, px.top + d.dy, px.right + d.dx, px.bottom))),
-        corner(Alignment.bottomLeft,
-            (d) => _emit(Rect.fromLTRB(px.left + d.dx, px.top, px.right, px.bottom + d.dy))),
-        corner(Alignment.bottomRight,
-            (d) => _emit(Rect.fromLTRB(px.left, px.top, px.right + d.dx, px.bottom + d.dy))),
+        corner(
+          Alignment.topLeft,
+          (d) => _emit(
+            Rect.fromLTRB(px.left + d.dx, px.top + d.dy, px.right, px.bottom),
+          ),
+        ),
+        corner(
+          Alignment.topRight,
+          (d) => _emit(
+            Rect.fromLTRB(px.left, px.top + d.dy, px.right + d.dx, px.bottom),
+          ),
+        ),
+        corner(
+          Alignment.bottomLeft,
+          (d) => _emit(
+            Rect.fromLTRB(px.left + d.dx, px.top, px.right, px.bottom + d.dy),
+          ),
+        ),
+        corner(
+          Alignment.bottomRight,
+          (d) => _emit(
+            Rect.fromLTRB(px.left, px.top, px.right + d.dx, px.bottom + d.dy),
+          ),
+        ),
       ],
     );
   }
@@ -1519,36 +1597,37 @@ class _Slider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 78,
-              child: Text(label,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 2,
-                  activeTrackColor: AppColors.mintAccent,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: AppColors.mintAccent,
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 14),
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 7),
-                ),
-                child: Slider(
-                    value: value.clamp(min, max),
-                    min: min,
-                    max: max,
-                    onChanged: onChanged),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 78,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
         ),
-      );
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 2,
+              activeTrackColor: AppColors.mintAccent,
+              inactiveTrackColor: Colors.white24,
+              thumbColor: AppColors.mintAccent,
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            ),
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _TabBtn extends StatelessWidget {
@@ -1571,13 +1650,21 @@ class _TabBtn extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 3),
-          Text(label,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 3),
+            Text(
+              label,
               style: TextStyle(
-                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
-        ]),
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1606,13 +1693,16 @@ class _IconAction extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          rotateIcon
-              ? Transform.rotate(angle: math.pi / 2, child: iconWidget)
-              : iconWidget,
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(color: color, fontSize: 11)),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            rotateIcon
+                ? Transform.rotate(angle: math.pi / 2, child: iconWidget)
+                : iconWidget,
+            const SizedBox(height: 3),
+            Text(label, style: TextStyle(color: color, fontSize: 11)),
+          ],
+        ),
       ),
     );
   }
@@ -1625,20 +1715,22 @@ class _RatioChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white10,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Text(label,
-                style: const TextStyle(color: Colors.white, fontSize: 12.5)),
-          ),
+    padding: const EdgeInsets.only(right: 8),
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white10,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white24),
         ),
-      );
+        child: Text(
+          label,
+          style: const TextStyle(color: Colors.white, fontSize: 12.5),
+        ),
+      ),
+    ),
+  );
 }

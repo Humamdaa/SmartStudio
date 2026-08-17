@@ -76,9 +76,9 @@ class _OcrScreenState extends State<OcrScreen> {
   Future<void> _copy() async {
     await Clipboard.setData(ClipboardData(text: _text));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم نسخ النص')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم نسخ النص')));
     }
   }
 
@@ -109,7 +109,10 @@ class _OcrScreenState extends State<OcrScreen> {
                 const SizedBox(height: 6),
                 const Text(
                   'اضغط مطولًا على أي كلمة أو سطر لتحديد الجزء الذي تريد نسخه.',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 ConstrainedBox(
@@ -152,7 +155,11 @@ class _OcrScreenState extends State<OcrScreen> {
           title: const Text('Live Text / OCR'),
           actions: [
             if (_text.isNotEmpty)
-              IconButton(onPressed: _copy, tooltip: 'نسخ', icon: const Icon(Icons.copy)),
+              IconButton(
+                onPressed: _copy,
+                tooltip: 'نسخ',
+                icon: const Icon(Icons.copy),
+              ),
           ],
         ),
         body: ListView(

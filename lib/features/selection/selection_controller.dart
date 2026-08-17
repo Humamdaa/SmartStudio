@@ -6,10 +6,7 @@ class SelectionState {
   final bool active;
   final Map<String, MediaItem> selected; // id -> item
 
-  const SelectionState({
-    this.active = false,
-    this.selected = const {},
-  });
+  const SelectionState({this.active = false, this.selected = const {}});
 
   int get count => selected.length;
   bool isSelected(String id) => selected.containsKey(id);
@@ -46,5 +43,5 @@ class SelectionController extends StateNotifier<SelectionState> {
 
 final selectionProvider =
     StateNotifierProvider<SelectionController, SelectionState>(
-  (ref) => SelectionController(),
-);
+      (ref) => SelectionController(),
+    );

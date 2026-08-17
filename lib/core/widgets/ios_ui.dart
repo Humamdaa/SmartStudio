@@ -38,8 +38,11 @@ class IosLargeTitle extends StatelessWidget {
               padding: const EdgeInsets.only(right: 6),
               child: GestureDetector(
                 onTap: onBack,
-                child: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: AppColors.navyDeep, size: 20),
+                child: const Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: AppColors.navyDeep,
+                  size: 20,
+                ),
               ),
             ),
           Expanded(
@@ -47,21 +50,27 @@ class IosLargeTitle extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.8,
-                    )),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.8,
+                  ),
+                ),
                 if (subtitle != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: Text(subtitle!,
-                        style: const TextStyle(
-                            color: AppColors.textSecondary, fontSize: 13.5)),
+                    child: Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13.5,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -87,15 +96,15 @@ class IosCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        margin: margin,
-        padding: padding,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: kIosSeparator),
-        ),
-        child: child,
-      );
+    margin: margin,
+    padding: padding,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: kIosSeparator),
+    ),
+    child: child,
+  );
 }
 
 /// عنوان قسم صغير فوق البطاقات (زي iOS Settings).
@@ -106,21 +115,23 @@ class IosSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(28, 18, 20, 6),
-        child: Row(
-          children: [
-            Text(text.toUpperCase(),
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.6,
-                )),
-            const Spacer(),
-            if (trailing != null) trailing!,
-          ],
+    padding: const EdgeInsets.fromLTRB(28, 18, 20, 6),
+    child: Row(
+      children: [
+        Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.6,
+          ),
         ),
-      );
+        const Spacer(),
+        if (trailing != null) trailing!,
+      ],
+    ),
+  );
 }
 
 /// صف داخل بطاقة — أيقونة ملوّنة + عنوان + وصف + سهم.
@@ -169,18 +180,24 @@ class IosRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(title,
-                          style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w500)),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                       if (subtitle != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 1),
-                          child: Text(subtitle!,
-                              style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 12.5)),
+                          child: Text(
+                            subtitle!,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                            ),
+                          ),
                         ),
                     ],
                   ),
@@ -189,8 +206,11 @@ class IosRow extends StatelessWidget {
                 if (onTap != null)
                   const Padding(
                     padding: EdgeInsets.only(left: 6),
-                    child: Icon(Icons.arrow_forward_ios_rounded,
-                        size: 14, color: AppColors.textHint),
+                    child: Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 14,
+                      color: AppColors.textHint,
+                    ),
                   ),
               ],
             ),
@@ -214,10 +234,10 @@ class IosSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Switch.adaptive(
-        value: value,
-        onChanged: onChanged,
-        activeTrackColor: AppColors.mintAccent,
-      );
+    value: value,
+    onChanged: onChanged,
+    activeTrackColor: AppColors.mintAccent,
+  );
 }
 
 /// شريط اختيار مقسّم (Segmented Control) بطابع iOS.
@@ -259,7 +279,7 @@ class IosSegmented<T> extends StatelessWidget {
                             color: Colors.black.withValues(alpha: 0.10),
                             blurRadius: 4,
                             offset: const Offset(0, 1),
-                          )
+                          ),
                         ]
                       : null,
                 ),
@@ -313,8 +333,11 @@ class IosSearchField extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.search_rounded,
-              color: AppColors.textSecondary, size: 19),
+          const Icon(
+            Icons.search_rounded,
+            color: AppColors.textSecondary,
+            size: 19,
+          ),
           const SizedBox(width: 6),
           Expanded(
             child: TextField(
@@ -327,7 +350,9 @@ class IosSearchField extends StatelessWidget {
                 border: InputBorder.none,
                 hintText: hint,
                 hintStyle: const TextStyle(
-                    color: AppColors.textHint, fontSize: 15.5),
+                  color: AppColors.textHint,
+                  fontSize: 15.5,
+                ),
               ),
             ),
           ),
@@ -354,13 +379,14 @@ class IosBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(text,
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+    ),
+  );
 }

@@ -6,7 +6,7 @@ import '../../features/search/search_vocabulary.dart';
 
 class PreciseSearchRepository {
   PreciseSearchRepository({DatabaseHelper? database})
-      : _database = database ?? DatabaseHelper.instance;
+    : _database = database ?? DatabaseHelper.instance;
 
   final DatabaseHelper _database;
 
@@ -28,15 +28,14 @@ class PreciseSearchRepository {
     if (parsed.isEmpty) return const [];
 
     final conditions = parsed.clauses
-        .map((clause) => SearchIndexCondition(
-              field: clause.databaseField,
-              value: clause.value,
-            ))
+        .map(
+          (clause) => SearchIndexCondition(
+            field: clause.databaseField,
+            value: clause.value,
+          ),
+        )
         .toList(growable: false);
-    final rows = await _database.searchIndexAdvanced(
-      conditions,
-      limit: 300,
-    );
+    final rows = await _database.searchIndexAdvanced(conditions, limit: 300);
     final hits = rows.map((row) => _rank(row, parsed)).toList();
     hits.sort((a, b) {
       final byScore = b.score.compareTo(a.score);
@@ -68,15 +67,17 @@ class PreciseSearchRepository {
     final normalizedOcr = SearchVocabulary.normalize(ocrText);
     final normalizedMetadata = SearchVocabulary.normalize(metadata);
     final normalizedPeople = people.map(SearchVocabulary.normalize).toList();
-    final normalizedGeneral = SearchVocabulary.normalize([
-      row['title']?.toString() ?? '',
-      objects.join(' '),
-      scenes.join(' '),
-      colors.join(' '),
-      ocrText,
-      metadata,
-      people.join(' '),
-    ].join(' '));
+    final normalizedGeneral = SearchVocabulary.normalize(
+      [
+        row['title']?.toString() ?? '',
+        objects.join(' '),
+        scenes.join(' '),
+        colors.join(' '),
+        ocrText,
+        metadata,
+        people.join(' '),
+      ].join(' '),
+    );
 
     var score = 0.0;
     final reasons = <String>[];
@@ -193,28 +194,45 @@ class PreciseSearchRepository {
     required List<String> people,
     required List<String> normalizedPeople,
   }) {
-    final personIndex = normalizedPeople.indexWhere((name) => name.contains(term));
+    final personIndex = normalizedPeople.indexWhere(
+      (name) => name.contains(term),
+    );
     if (personIndex >= 0) {
       _addReason(reasons, 'شخص: ${people[personIndex]}');
       return;
     }
-    final objectIndex = normalizedObjects.indexWhere((label) => label.contains(term));
+    final objectIndex = normalizedObjects.indexWhere(
+      (label) => label.contains(term),
+    );
     if (objectIndex >= 0) {
-      _addReason(reasons, 'عنصر: ${SearchVocabulary.arabicName(objects[objectIndex])}');
+      _addReason(
+        reasons,
+        'عنصر: ${SearchVocabulary.arabicName(objects[objectIndex])}',
+      );
       return;
     }
     if (normalizedOcr.contains(term)) {
       _addReason(reasons, 'نص داخل الصورة');
       return;
     }
-    final sceneIndex = normalizedScenes.indexWhere((label) => label.contains(term));
+    final sceneIndex = normalizedScenes.indexWhere(
+      (label) => label.contains(term),
+    );
     if (sceneIndex >= 0) {
-      _addReason(reasons, 'مشهد: ${SearchVocabulary.arabicName(scenes[sceneIndex])}');
+      _addReason(
+        reasons,
+        'مشهد: ${SearchVocabulary.arabicName(scenes[sceneIndex])}',
+      );
       return;
     }
-    final colorIndex = normalizedColors.indexWhere((label) => label.contains(term));
+    final colorIndex = normalizedColors.indexWhere(
+      (label) => label.contains(term),
+    );
     if (colorIndex >= 0) {
-      _addReason(reasons, 'لون: ${SearchVocabulary.arabicName(colors[colorIndex])}');
+      _addReason(
+        reasons,
+        'لون: ${SearchVocabulary.arabicName(colors[colorIndex])}',
+      );
       return;
     }
     _addReason(reasons, 'تطابق عام');

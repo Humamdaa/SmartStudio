@@ -25,8 +25,9 @@ class _ComingSoon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: AppColors.lightBackground,
         body: SafeArea(
@@ -38,16 +39,20 @@ class _ComingSoon extends StatelessWidget {
                   children: [
                     if (showBack) ...[
                       _CircleBtn(
-                          icon: Icons.arrow_back_rounded,
-                          onTap: () => context.pop()),
+                        icon: Icons.arrow_back_rounded,
+                        onTap: () => context.pop(),
+                      ),
                       const SizedBox(width: 12),
                     ],
-                    Text(title,
-                        style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5)),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -63,16 +68,21 @@ class _ComingSoon extends StatelessWidget {
                           color: AppColors.navyDeep.withOpacity(0.06),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(icon,
-                            color: AppColors.navyDeep.withOpacity(0.55),
-                            size: 44),
+                        child: Icon(
+                          icon,
+                          color: AppColors.navyDeep.withOpacity(0.55),
+                          size: 44,
+                        ),
                       ),
                       const SizedBox(height: 20),
-                      Text(subtitle,
-                          style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500)),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -93,22 +103,22 @@ class _CircleBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 42,
-        height: 42,
-        child: Material(
-          color: Colors.white,
-          elevation: 1.5,
-          shadowColor: AppColors.navyDeep.withOpacity(0.2),
-          shape: CircleBorder(
-              side: BorderSide(color: AppColors.navyDeep.withOpacity(0.06))),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onTap,
-            child:
-                Center(child: Icon(icon, color: AppColors.navyDeep, size: 20)),
-          ),
-        ),
-      );
+    width: 42,
+    height: 42,
+    child: Material(
+      color: Colors.white,
+      elevation: 1.5,
+      shadowColor: AppColors.navyDeep.withOpacity(0.2),
+      shape: CircleBorder(
+        side: BorderSide(color: AppColors.navyDeep.withOpacity(0.06)),
+      ),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Center(child: Icon(icon, color: AppColors.navyDeep, size: 20)),
+      ),
+    ),
+  );
 }
 
 class OcrScreen extends StatelessWidget {
@@ -116,10 +126,10 @@ class OcrScreen extends StatelessWidget {
   const OcrScreen({super.key, required this.assetId});
   @override
   Widget build(BuildContext context) => const _ComingSoon(
-        title: 'Extract Text',
-        icon: Icons.text_fields_rounded,
-        showBack: true,
-      );
+    title: 'Extract Text',
+    icon: Icons.text_fields_rounded,
+    showBack: true,
+  );
 }
 
 class VideoScreen extends StatelessWidget {
@@ -127,10 +137,10 @@ class VideoScreen extends StatelessWidget {
   const VideoScreen({super.key, required this.assetId});
   @override
   Widget build(BuildContext context) => const _ComingSoon(
-        title: 'Video Summary',
-        icon: Icons.movie_outlined,
-        showBack: true,
-      );
+    title: 'Video Summary',
+    icon: Icons.movie_outlined,
+    showBack: true,
+  );
 }
 
 // ── تفاصيل الألبوم — بستايل الرئيسية العصري ──────────────────
@@ -191,8 +201,9 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: AppColors.lightBackground,
         body: SafeArea(
@@ -204,26 +215,33 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                 child: Row(
                   children: [
                     _CircleBtn(
-                        icon: Icons.arrow_back_rounded,
-                        onTap: () => context.pop()),
+                      icon: Icons.arrow_back_rounded,
+                      onTap: () => context.pop(),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(widget.album.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.5)),
-                          Text('${widget.album.count} items',
-                              style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 13)),
+                          Text(
+                            widget.album.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            '${widget.album.count} items',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -234,36 +252,46 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                 child: _loading
                     ? const Center(
                         child: CircularProgressIndicator(
-                            color: AppColors.navyDeep))
+                          color: AppColors.navyDeep,
+                        ),
+                      )
                     : GridView.builder(
                         controller: _scrollCtrl,
                         padding: const EdgeInsets.all(AppSizes.gridSpacing),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: AppSizes.gridCrossAxisCount,
-                          mainAxisSpacing: AppSizes.gridSpacing,
-                          crossAxisSpacing: AppSizes.gridSpacing,
-                        ),
+                              crossAxisCount: AppSizes.gridCrossAxisCount,
+                              mainAxisSpacing: AppSizes.gridSpacing,
+                              crossAxisSpacing: AppSizes.gridSpacing,
+                            ),
                         itemCount: _items.length + (_loadingMore ? 1 : 0),
                         itemBuilder: (context, index) {
                           if (index >= _items.length) {
                             return const Center(
-                                child: CircularProgressIndicator(
-                                    color: AppColors.navyDeep, strokeWidth: 2));
+                              child: CircularProgressIndicator(
+                                color: AppColors.navyDeep,
+                                strokeWidth: 2,
+                              ),
+                            );
                           }
                           final item = _items[index];
                           return MediaGridItem(
                             item: item,
-                            onTap: () => context.push<String>(
-                              AppRoutes.detail,
-                              extra: {'id': item.id, 'items': _items},
-                            ).then((removedId) {
-                              // انحذفت/انتقلت للسكيور — نشيلها من الشبكة فوراً
-                              if (removedId != null && mounted) {
-                                setState(() => _items
-                                    .removeWhere((e) => e.id == removedId));
-                              }
-                            }),
+                            onTap: () => context
+                                .push<String>(
+                                  AppRoutes.detail,
+                                  extra: {'id': item.id, 'items': _items},
+                                )
+                                .then((removedId) {
+                                  // انحذفت/انتقلت للسكيور — نشيلها من الشبكة فوراً
+                                  if (removedId != null && mounted) {
+                                    setState(
+                                      () => _items.removeWhere(
+                                        (e) => e.id == removedId,
+                                      ),
+                                    );
+                                  }
+                                }),
                           );
                         },
                       ),

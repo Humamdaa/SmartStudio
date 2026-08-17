@@ -3,7 +3,6 @@ import 'package:photo_manager/photo_manager.dart';
 import '../models/media_item.dart';
 
 class MediaRepository {
-
   Future<PermissionState> requestPermission() async {
     return await PhotoManager.requestPermissionExtend();
   }
@@ -12,17 +11,13 @@ class MediaRepository {
     return await PhotoManager.requestPermissionExtend();
   }
 
-
   Future<AssetPathEntity?> _getAllAlbum(RequestType type) async {
     final albums = await PhotoManager.getAssetPathList(
       type: type,
       onlyAll: true,
       filterOption: FilterOptionGroup(
         orders: [
-          const OrderOption(
-            type: OrderOptionType.createDate,
-            asc: false,
-          ),
+          const OrderOption(type: OrderOptionType.createDate, asc: false),
         ],
       ),
     );
@@ -43,10 +38,7 @@ class MediaRepository {
     final album = await _getAllAlbum(type);
     if (album == null) return [];
 
-    final assets = await album.getAssetListPaged(
-      page: page,
-      size: pageSize,
-    );
+    final assets = await album.getAssetListPaged(page: page, size: pageSize);
 
     return assets.map(MediaItem.fromAsset).toList();
   }
@@ -90,10 +82,7 @@ class MediaRepository {
       onlyAll: false,
       filterOption: FilterOptionGroup(
         orders: [
-          const OrderOption(
-            type: OrderOptionType.createDate,
-            asc: false,
-          ),
+          const OrderOption(type: OrderOptionType.createDate, asc: false),
         ],
       ),
     );
@@ -104,13 +93,15 @@ class MediaRepository {
       if (count == 0) continue;
 
       final cover = await path.getAssetListPaged(page: 0, size: 1);
-      albums.add(AlbumInfo(
-        id: path.id,
-        name: path.name,
-        count: count,
-        coverAsset: cover.isNotEmpty ? cover.first : null,
-        path: path,
-      ));
+      albums.add(
+        AlbumInfo(
+          id: path.id,
+          name: path.name,
+          count: count,
+          coverAsset: cover.isNotEmpty ? cover.first : null,
+          path: path,
+        ),
+      );
     }
 
     albums.sort((a, b) => b.count.compareTo(a.count));
@@ -134,7 +125,6 @@ class MediaRepository {
   }
 }
 
-
 class AlbumInfo {
   final String id;
   final String name;
@@ -151,5 +141,6 @@ class AlbumInfo {
   });
 }
 
-final mediaRepositoryProvider =
-Provider<MediaRepository>((_) => MediaRepository());
+final mediaRepositoryProvider = Provider<MediaRepository>(
+  (_) => MediaRepository(),
+);

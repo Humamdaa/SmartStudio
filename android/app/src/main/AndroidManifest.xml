@@ -22,6 +22,14 @@
     <!-- شاشة الأذونات بتطلب الميكروفون (للبحث الصوتي مستقبلاً) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <queries>
+    <intent>
+        <action android:name="android.speech.RecognitionService" />
+    </intent>
+</queries>
+
     <!-- WorkManager: persistent offline indexing slices. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application

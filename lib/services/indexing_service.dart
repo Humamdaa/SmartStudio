@@ -34,11 +34,7 @@ class IndexProgress {
   final int total;
   final bool running;
 
-  const IndexProgress({
-    this.done = 0,
-    this.total = 0,
-    this.running = false,
-  });
+  const IndexProgress({this.done = 0, this.total = 0, this.running = false});
 
   double get fraction => total == 0 ? 0 : done / total;
   bool get isComplete => total > 0 && done >= total;
@@ -56,8 +52,9 @@ class IndexingService {
 
   Box<MediaAnalysis> get _box => _store.analysisBox;
 
-  final ValueNotifier<IndexProgress> progress =
-      ValueNotifier(const IndexProgress());
+  final ValueNotifier<IndexProgress> progress = ValueNotifier(
+    const IndexProgress(),
+  );
 
   bool _cancelled = false;
 
@@ -97,13 +94,15 @@ class IndexingService {
     final pending = assets.where((a) => !already.contains(a.id)).toList();
 
     if (pending.isEmpty) {
-      progress.value = IndexProgress(
-          done: 0, total: 0, running: false);
+      progress.value = IndexProgress(done: 0, total: 0, running: false);
       return;
     }
 
-    progress.value =
-        IndexProgress(done: 0, total: pending.length, running: true);
+    progress.value = IndexProgress(
+      done: 0,
+      total: pending.length,
+      running: true,
+    );
 
     var done = 0;
     for (var i = 0; i < pending.length; i += _batchSize) {
@@ -139,8 +138,11 @@ class IndexingService {
       }
 
       done = end;
-      progress.value =
-          IndexProgress(done: done, total: pending.length, running: true);
+      progress.value = IndexProgress(
+        done: done,
+        total: pending.length,
+        running: true,
+      );
 
       // 4) نترك الواجهة تلتقط أنفاسها بين الدفعات.
       //    بالخلفية منمدّد الاستراحة أكثر حتى ما نزاحم المستخدم.
@@ -149,8 +151,11 @@ class IndexingService {
       );
     }
 
-    progress.value =
-        IndexProgress(done: done, total: pending.length, running: false);
+    progress.value = IndexProgress(
+      done: done,
+      total: pending.length,
+      running: false,
+    );
   }
 
   /// حفظ دفعة النتائج.
@@ -165,8 +170,10 @@ class IndexingService {
     final ids = results.keys.toList();
 
     // استعلام واحد يجيب كل الصفوف الموجودة مسبقًا
-    final existing =
-        _box.query(MediaAnalysis_.assetId.oneOf(ids)).build().find();
+    final existing = _box
+        .query(MediaAnalysis_.assetId.oneOf(ids))
+        .build()
+        .find();
     final byId = {for (final e in existing) e.assetId: e};
 
     final now = DateTime.now();
@@ -174,8 +181,8 @@ class IndexingService {
 
     for (final entry in results.entries) {
       final v = entry.value;
-      final row = byId[entry.key] ??
-          MediaAnalysis(assetId: entry.key, analyzedAt: now);
+      final row =
+          byId[entry.key] ?? MediaAnalysis(assetId: entry.key, analyzedAt: now);
 
       row
         ..phash = v[kIdxPhash].toInt()
@@ -217,8 +224,10 @@ class IndexingService {
   /// حتى تختفي من النتائج بدون ما نستنى فحص جديد.
   void removeAnalysisFor(List<String> assetIds) {
     if (assetIds.isEmpty) return;
-    final rows =
-        _box.query(MediaAnalysis_.assetId.oneOf(assetIds)).build().find();
+    final rows = _box
+        .query(MediaAnalysis_.assetId.oneOf(assetIds))
+        .build()
+        .find();
     if (rows.isNotEmpty) {
       _box.removeMany(rows.map((r) => r.id).toList());
     }
@@ -244,10 +253,7 @@ class IndexingService {
         .map((e) => [e.assetId, e.phash!, e.qualityScore ?? 0.0])
         .toList();
 
-    return compute(groupDuplicates, {
-      'threshold': threshold,
-      'items': items,
-    });
+    return compute(groupDuplicates, {'threshold': threshold, 'items': items});
   }
 
   /// درجات الجودة مفهرسة بالـ assetId — للعرض السريع.
@@ -260,14 +266,17 @@ class IndexingService {
   }
 
   /// الصور الأقرب للون معيّن، مرتّبة من الأقرب.
-  List<MediaAnalysis> searchByColor(int targetArgb,
-      {double maxDistance = 0.25}) {
-    final scored = allAnalyzed()
-        .where((e) => e.dominantColor != null)
-        .map((e) => (e, colorDistance(targetArgb, e.dominantColor!)))
-        .where((t) => t.$2 <= maxDistance)
-        .toList()
-      ..sort((a, b) => a.$2.compareTo(b.$2));
+  List<MediaAnalysis> searchByColor(
+    int targetArgb, {
+    double maxDistance = 0.25,
+  }) {
+    final scored =
+        allAnalyzed()
+            .where((e) => e.dominantColor != null)
+            .map((e) => (e, colorDistance(targetArgb, e.dominantColor!)))
+            .where((t) => t.$2 <= maxDistance)
+            .toList()
+          ..sort((a, b) => a.$2.compareTo(b.$2));
 
     return scored.map((t) => t.$1).toList();
   }
@@ -286,38 +295,49 @@ class IndexingService {
   ///   • غلاف   → عريضة (16:9)
   ///
   /// بنجيب الأصول الحقيقية عشان نعرف أبعادها الأصلية.
-  Future<List<({
-    AssetEntity asset,
-    double score,
-    double quality,
-    double fit,
-    double faceScore,
-    int faceCount,
-    bool faceIndexed,
-  })>> suggestPhotos({required bool forProfile, int take = 12}) async {
+  Future<
+    List<
+      ({
+        AssetEntity asset,
+        double score,
+        double quality,
+        double fit,
+        double faceScore,
+        int faceCount,
+        bool faceIndexed,
+      })
+    >
+  >
+  suggestPhotos({required bool forProfile, int take = 12}) async {
     // Start from a wider pool of already-analyzed photos. For You must stay a
     // cheap read-only feature: it never runs another detector/model here.
     final candidates = bestByQuality(take: take * 4);
     final faceSignals = forProfile
-        ? await DatabaseHelper.instance
-            .getFaceSuggestionSignals(candidates.map((row) => row.assetId))
-        : const <String,
+        ? await DatabaseHelper.instance.getFaceSuggestionSignals(
+            candidates.map((row) => row.assetId),
+          )
+        : const <
+            String,
             ({
               int faceCount,
               double bestQuality,
               double bestPose,
               double bestArea,
-            })>{};
+            })
+          >{};
 
-    final scored = <({
-      AssetEntity asset,
-      double score,
-      double quality,
-      double fit,
-      double faceScore,
-      int faceCount,
-      bool faceIndexed,
-    })>[];
+    final scored =
+        <
+          ({
+            AssetEntity asset,
+            double score,
+            double quality,
+            double fit,
+            double faceScore,
+            int faceCount,
+            bool faceIndexed,
+          })
+        >[];
 
     for (final row in candidates) {
       final asset = await AssetEntity.fromId(row.assetId);
@@ -349,21 +369,21 @@ class IndexingService {
           if (signal.faceCount <= 0) {
             faceScore = 0;
           } else {
-            final areaScore = ((math.sqrt(signal.bestArea.clamp(0.0, 1.0)) -
-                            0.08) /
-                        0.27)
+            final areaScore =
+                ((math.sqrt(signal.bestArea.clamp(0.0, 1.0)) - 0.08) / 0.27)
                     .clamp(0.0, 1.0)
                     .toDouble();
-            final baseFace = (signal.bestQuality * 0.70 +
-                    signal.bestPose * 0.20 +
-                    areaScore * 0.10)
-                .clamp(0.0, 1.0)
-                .toDouble();
+            final baseFace =
+                (signal.bestQuality * 0.70 +
+                        signal.bestPose * 0.20 +
+                        areaScore * 0.10)
+                    .clamp(0.0, 1.0)
+                    .toDouble();
             final crowdPenalty = signal.faceCount == 1
                 ? 1.0
                 : signal.faceCount == 2
-                    ? 0.84
-                    : 0.68;
+                ? 0.84
+                : 0.68;
             faceScore = (baseFace * crowdPenalty * 100)
                 .clamp(0.0, 100.0)
                 .toDouble();
@@ -373,9 +393,9 @@ class IndexingService {
 
       final score = forProfile
           ? quality * 0.50 +
-              fit * 100 * 0.20 +
-              resolution * 100 * 0.05 +
-              faceScore * 0.25
+                fit * 100 * 0.20 +
+                resolution * 100 * 0.05 +
+                faceScore * 0.25
           : quality * 0.65 + fit * 100 * 0.30 + resolution * 100 * 0.05;
 
       scored.add((

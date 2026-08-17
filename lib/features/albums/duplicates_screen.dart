@@ -33,12 +33,21 @@ class _Sensitivity {
 }
 
 const _sensitivities = [
-  _Sensitivity('Identical', 2,
-      'Exact copies — same photo saved twice (e.g. downloaded again).'),
-  _Sensitivity('Very similar', 8,
-      'Same photo, different size, compression or a light edit.'),
-  _Sensitivity('Similar', 14,
-      'Burst shots and near-identical scenes taken seconds apart.'),
+  _Sensitivity(
+    'Identical',
+    2,
+    'Exact copies — same photo saved twice (e.g. downloaded again).',
+  ),
+  _Sensitivity(
+    'Very similar',
+    8,
+    'Same photo, different size, compression or a light edit.',
+  ),
+  _Sensitivity(
+    'Similar',
+    14,
+    'Burst shots and near-identical scenes taken seconds apart.',
+  ),
 ];
 
 class DuplicatesScreen extends ConsumerStatefulWidget {
@@ -74,8 +83,9 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
 
     try {
       final svc = ref.read(indexingServiceProvider);
-      final raw =
-          await svc.findDuplicateGroups(threshold: _sensitivity.threshold);
+      final raw = await svc.findDuplicateGroups(
+        threshold: _sensitivity.threshold,
+      );
       final quality = svc.qualityByAssetId();
 
       final resolved = <_Group>[];
@@ -111,10 +121,10 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
   }
 
   void _toggle(String assetId) => setState(() {
-        _toDelete.contains(assetId)
-            ? _toDelete.remove(assetId)
-            : _toDelete.add(assetId);
-      });
+    _toDelete.contains(assetId)
+        ? _toDelete.remove(assetId)
+        : _toDelete.add(assetId);
+  });
 
   /// يمنع حذف مجموعة بالكامل — لازم يضل واحدة على الأقل.
   bool _wouldEmptyGroup(_Group g, String candidateId) {
@@ -132,15 +142,19 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
       builder: (dialogCtx) => AlertDialog(
         title: Text('Delete ${_toDelete.length} photo(s)?'),
         content: const Text(
-            'The selected photos will be removed from your device.'),
+          'The selected photos will be removed from your device.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Delete',
-                style: TextStyle(color: AppColors.errorRed)),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.errorRed),
+            ),
           ),
         ],
       ),
@@ -158,12 +172,16 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
 
     if (!mounted) return;
     setState(() => _deleting = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(deleted.isEmpty
-          ? 'Nothing was deleted'
-          : 'Deleted ${deleted.length} photo(s)'),
-      backgroundColor: deleted.isEmpty ? AppColors.errorRed : null,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          deleted.isEmpty
+              ? 'Nothing was deleted'
+              : 'Deleted ${deleted.length} photo(s)',
+        ),
+        backgroundColor: deleted.isEmpty ? AppColors.errorRed : null,
+      ),
+    );
 
     if (deleted.isNotEmpty) {
       ref.read(galleryNeedsRefreshProvider.notifier).state = true;
@@ -174,8 +192,9 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: kIosGroupedBg,
         body: SafeArea(
@@ -201,33 +220,39 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
   }
 
   Widget _buildSensitivity() => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            IosSegmented<int>(
-              value: _sensitivity.threshold,
-              segments: {
-                for (final s in _sensitivities) s.threshold: s.label,
-              },
-              onChanged: (v) {
-                setState(() => _sensitivity =
-                    _sensitivities.firstWhere((s) => s.threshold == v));
-                _load();
-              },
-            ),
-            const SizedBox(height: 7),
-            Text(_sensitivity.description,
-                style: const TextStyle(
-                    fontSize: 11.5, color: AppColors.textSecondary)),
-          ],
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IosSegmented<int>(
+          value: _sensitivity.threshold,
+          segments: {for (final s in _sensitivities) s.threshold: s.label},
+          onChanged: (v) {
+            setState(
+              () => _sensitivity = _sensitivities.firstWhere(
+                (s) => s.threshold == v,
+              ),
+            );
+            _load();
+          },
         ),
-      );
+        const SizedBox(height: 7),
+        Text(
+          _sensitivity.description,
+          style: const TextStyle(
+            fontSize: 11.5,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildBody() {
     if (_loading) {
       return const Center(
-          child: CircularProgressIndicator(color: AppColors.navyDeep));
+        child: CircularProgressIndicator(color: AppColors.navyDeep),
+      );
     }
     if (_error != null) {
       return _message(
@@ -243,7 +268,8 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
         icon: Icons.check_rounded,
         color: AppColors.navyDeep,
         title: 'No duplicates found',
-        body: 'Your library is still being analyzed in the background. '
+        body:
+            'Your library is still being analyzed in the background. '
             'Come back in a moment if you just installed the app.',
       );
     }
@@ -261,44 +287,51 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
     required String title,
     required String body,
     Widget? action,
-  }) =>
-      Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 62,
-                height: 62,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 30, color: color),
-              ),
-              const SizedBox(height: 14),
-              Text(title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 6),
-              Text(body,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 12.5, color: AppColors.textSecondary)),
-              if (action != null) ...[const SizedBox(height: 10), action],
-            ],
+  }) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 30, color: color),
           ),
-        ),
-      );
+          const SizedBox(height: 14),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if (action != null) ...[const SizedBox(height: 10), action],
+        ],
+      ),
+    ),
+  );
 
   Widget _buildGroupCard(int i) {
     final group = _groups[i];
-    final markedInGroup =
-        group.assets.where((a) => _toDelete.contains(a.id)).length;
+    final markedInGroup = group.assets
+        .where((a) => _toDelete.contains(a.id))
+        .length;
 
     return IosCard(
       child: Column(
@@ -306,22 +339,31 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
         children: [
           Row(
             children: [
-              Text('Group ${i + 1}',
-                  style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
+              Text(
+                'Group ${i + 1}',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
               const SizedBox(width: 8),
               IosBadge('${group.assets.length} photos'),
               const Spacer(),
-              Text('$markedInGroup selected',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.textSecondary)),
+              Text(
+                '$markedInGroup selected',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
-          const Text('Tap a photo to keep or remove it',
-              style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+          const Text(
+            'Tap a photo to keep or remove it',
+            style: TextStyle(fontSize: 11, color: AppColors.textHint),
+          ),
           const SizedBox(height: 8),
           SizedBox(
             height: 96,
@@ -348,7 +390,8 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
         if (!marked && _wouldEmptyGroup(group, asset.id)) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('Keep at least one photo in each group')),
+              content: Text('Keep at least one photo in each group'),
+            ),
           );
           return;
         }
@@ -366,102 +409,114 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Stack(fit: StackFit.expand, children: [
-            Image(
-              image: AssetEntityImageProvider(
-                asset,
-                isOriginal: false,
-                thumbnailSize: const ThumbnailSize.square(200),
-              ),
-              fit: BoxFit.cover,
-            ),
-            if (marked)
-              Container(color: AppColors.errorRed.withValues(alpha: 0.35)),
-
-            // حالة الصورة: محذوفة أم محفوظة
-            Positioned(
-              top: 3,
-              left: 3,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: marked ? AppColors.errorRed : AppColors.mintAccent,
-                  shape: BoxShape.circle,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image(
+                image: AssetEntityImageProvider(
+                  asset,
+                  isOriginal: false,
+                  thumbnailSize: const ThumbnailSize.square(200),
                 ),
-                child: Icon(
-                  marked ? Icons.delete_outline_rounded : Icons.check_rounded,
-                  size: 13,
-                  color: marked ? Colors.white : Colors.black87,
+                fit: BoxFit.cover,
+              ),
+              if (marked)
+                Container(color: AppColors.errorRed.withValues(alpha: 0.35)),
+
+              // حالة الصورة: محذوفة أم محفوظة
+              Positioned(
+                top: 3,
+                left: 3,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: marked ? AppColors.errorRed : AppColors.mintAccent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    marked ? Icons.delete_outline_rounded : Icons.check_rounded,
+                    size: 13,
+                    color: marked ? Colors.white : Colors.black87,
+                  ),
                 ),
               ),
-            ),
 
-            // أعلى جودة بالمجموعة — مجرّد اقتراح
-            if (isTopScore)
-              const Positioned(top: 3, right: 3, child: _TopBadge()),
+              // أعلى جودة بالمجموعة — مجرّد اقتراح
+              if (isTopScore)
+                const Positioned(top: 3, right: 3, child: _TopBadge()),
 
-            // درجة الجودة
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                color: Colors.black54,
-                padding: const EdgeInsets.symmetric(vertical: 1.5),
-                child: Text('Q ${quality.round()}',
+              // درجة الجودة
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  color: Colors.black54,
+                  padding: const EdgeInsets.symmetric(vertical: 1.5),
+                  child: Text(
+                    'Q ${quality.round()}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w700)),
+                      color: Colors.white,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildBottomBar() => Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: kIosSeparator)),
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(top: BorderSide(color: kIosSeparator)),
+    ),
+    child: Row(
+      children: [
+        const Expanded(
+          child: Text(
+            'Q = quality score (sharpness, exposure, resolution)',
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
         ),
-        child: Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Q = quality score (sharpness, exposure, resolution)',
-                style:
-                    TextStyle(fontSize: 11, color: AppColors.textSecondary),
-              ),
+        ElevatedButton.icon(
+          onPressed: _toDelete.isEmpty || _deleting ? null : _deleteSelected,
+          icon: _deleting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+          label: Text(
+            'Delete ${_toDelete.length}',
+            style: const TextStyle(color: Colors.white, fontSize: 13.5),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.errorRed,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
             ),
-            ElevatedButton.icon(
-              onPressed:
-                  _toDelete.isEmpty || _deleting ? null : _deleteSelected,
-              icon: _deleting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.delete_outline_rounded,
-                      color: Colors.white, size: 18),
-              label: Text('Delete ${_toDelete.length}',
-                  style:
-                      const TextStyle(color: Colors.white, fontSize: 13.5)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.errorRed,
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22)),
-              ),
-            ),
-          ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _TopBadge extends StatelessWidget {
@@ -469,15 +524,18 @@ class _TopBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: const Text('TOP Q',
-            style: TextStyle(
-                fontSize: 7.5,
-                fontWeight: FontWeight.w800,
-                color: Colors.white)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+    decoration: BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.6),
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: const Text(
+      'TOP Q',
+      style: TextStyle(
+        fontSize: 7.5,
+        fontWeight: FontWeight.w800,
+        color: Colors.white,
+      ),
+    ),
+  );
 }

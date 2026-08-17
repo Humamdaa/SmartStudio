@@ -17,8 +17,7 @@ class Album {
 
   int get count => items.length;
 
-  MediaItem? get coverItem =>
-      items.isNotEmpty ? items.first : null;
+  MediaItem? get coverItem => items.isNotEmpty ? items.first : null;
 }
 
 class PersonGroup {

@@ -43,10 +43,14 @@ class CustomAlbumRepo {
 
   bool containsAsset(int albumId, String assetId) {
     return _itemBox
-        .query(CustomAlbumItem_.album.equals(albumId)
-            .and(CustomAlbumItem_.assetId.equals(assetId)))
-        .build()
-        .findFirst() != null;
+            .query(
+              CustomAlbumItem_.album
+                  .equals(albumId)
+                  .and(CustomAlbumItem_.assetId.equals(assetId)),
+            )
+            .build()
+            .findFirst() !=
+        null;
   }
 
   // يرجع true إذا انضافت، false إذا كانت موجودة أصلاً بالألبوم
@@ -68,8 +72,6 @@ class CustomAlbumRepo {
 
   void removeItem(int itemId) => _itemBox.remove(itemId);
 
-  int itemCount(int albumId) => _itemBox
-      .query(CustomAlbumItem_.album.equals(albumId))
-      .build()
-      .count();
+  int itemCount(int albumId) =>
+      _itemBox.query(CustomAlbumItem_.album.equals(albumId)).build().count();
 }

@@ -167,11 +167,13 @@ class OcrService {
         }
       } catch (combinedError) {
         try {
-          final arabic = _cleanArabicText(await _runArabicTesseract(
-            imagePath,
-            language: 'ara',
-            pageMode: PageSegmentationMode.auto,
-          ));
+          final arabic = _cleanArabicText(
+            await _runArabicTesseract(
+              imagePath,
+              language: 'ara',
+              pageMode: PageSegmentationMode.auto,
+            ),
+          );
           if (_containsArabic(arabic)) {
             pieces.add(arabic);
             scripts.add('arabic');
@@ -268,7 +270,9 @@ class OcrService {
         final x1 = (rect.left.floor() - pad).clamp(0, image.width - 1).toInt();
         final y1 = (rect.top.floor() - pad).clamp(0, image.height - 1).toInt();
         final x2 = (rect.right.ceil() + pad).clamp(x1, image.width - 1).toInt();
-        final y2 = (rect.bottom.ceil() + pad).clamp(y1, image.height - 1).toInt();
+        final y2 = (rect.bottom.ceil() + pad)
+            .clamp(y1, image.height - 1)
+            .toInt();
         img.fillRect(
           image,
           x1: x1,
@@ -281,7 +285,8 @@ class OcrService {
       }
       if (masked == 0) return null;
 
-      final path = '${Directory.systemTemp.path}/pixmind_ar_focus_'
+      final path =
+          '${Directory.systemTemp.path}/pixmind_ar_focus_'
           '${DateTime.now().microsecondsSinceEpoch}.jpg';
       await File(path).writeAsBytes(img.encodeJpg(image, quality: 94));
       return path;
@@ -316,8 +321,7 @@ class OcrService {
           TesseractConfig.preserveInterwordSpaces: '1',
         },
       ),
-    ))
-        .trim();
+    )).trim();
   }
 
   int _arabicCharCount(String value) =>
@@ -330,9 +334,9 @@ class OcrService {
         .split(RegExp(r'\s+'))
         .where((word) => word.trim().isNotEmpty)
         .length;
-    final noise = RegExp(r'[^\u0600-\u06FFa-zA-Z0-9\s.,:;!?%+\-/]')
-        .allMatches(value)
-        .length;
+    final noise = RegExp(
+      r'[^\u0600-\u06FFa-zA-Z0-9\s.,:;!?%+\-/]',
+    ).allMatches(value).length;
     return arabic * 2.0 + words * 1.2 - noise * 0.8;
   }
 
@@ -356,12 +360,33 @@ class OcrService {
   String analyzeSentiment(String text) {
     final lower = text.toLowerCase();
     const positiveWords = [
-      'happy', 'love', 'great', 'amazing', 'wonderful', 'excellent',
-      'سعيد', 'جميل', 'رائع', 'ممتاز', 'محبة', 'حب', 'بديع',
+      'happy',
+      'love',
+      'great',
+      'amazing',
+      'wonderful',
+      'excellent',
+      'سعيد',
+      'جميل',
+      'رائع',
+      'ممتاز',
+      'محبة',
+      'حب',
+      'بديع',
     ];
     const negativeWords = [
-      'sad', 'hate', 'terrible', 'awful', 'bad', 'worst',
-      'حزين', 'كره', 'سيء', 'فظيع', 'رديء', 'مريع',
+      'sad',
+      'hate',
+      'terrible',
+      'awful',
+      'bad',
+      'worst',
+      'حزين',
+      'كره',
+      'سيء',
+      'فظيع',
+      'رديء',
+      'مريع',
     ];
     final positive = positiveWords.where(lower.contains).length;
     final negative = negativeWords.where(lower.contains).length;

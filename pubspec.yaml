@@ -40,6 +40,8 @@ dependencies:
 
   # Navigation
   go_router: ^13.2.0
+  
+  speech_to_text: ^7.4.0
 
   # Media
   photo_manager: ^3.3.0

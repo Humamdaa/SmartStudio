@@ -106,17 +106,19 @@ class SecureStorageService {
           thumbPath = await _generateVideoThumbnail(asset);
         }
 
-        results.add(SecureFile(
-          originalAssetId: asset.id,
-          securePath: destPath,
-          originalName: asset.title ?? safeName,
-          mimeType: asset.type == AssetType.video ? 'video' : 'image',
-          thumbnailPath: thumbPath,
-          width: asset.width,
-          height: asset.height,
-          duration: asset.videoDuration.inSeconds,
-          addedAt: DateTime.now(),
-        ));
+        results.add(
+          SecureFile(
+            originalAssetId: asset.id,
+            securePath: destPath,
+            originalName: asset.title ?? safeName,
+            mimeType: asset.type == AssetType.video ? 'video' : 'image',
+            thumbnailPath: thumbPath,
+            width: asset.width,
+            height: asset.height,
+            duration: asset.videoDuration.inSeconds,
+            addedAt: DateTime.now(),
+          ),
+        );
         idsToDelete.add(asset.id);
       } catch (_) {
         // نتجاهل هذا العنصر ونكمل الباقي

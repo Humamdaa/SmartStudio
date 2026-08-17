@@ -4,9 +4,9 @@ class AppPrefs {
   AppPrefs._();
   static final AppPrefs instance = AppPrefs._();
 
-  static const _keyFirstLaunch  = 'first_launch';
-  static const _keyGridColumns  = 'grid_columns';
-  static const _keyThemeMode    = 'theme_mode'; // 'light' | 'dark' | 'system'
+  static const _keyFirstLaunch = 'first_launch';
+  static const _keyGridColumns = 'grid_columns';
+  static const _keyThemeMode = 'theme_mode'; // 'light' | 'dark' | 'system'
   static const _keyBackgroundIndexing = 'background_indexing_enabled';
   static const _keyArabicOcr = 'arabic_ocr_enabled';
 
@@ -19,8 +19,7 @@ class AppPrefs {
       (await _p).setBool(_keyFirstLaunch, false);
 
   // ── Grid Columns ──────────────────────────────
-  Future<int> get gridColumns async =>
-      (await _p).getInt(_keyGridColumns) ?? 3;
+  Future<int> get gridColumns async => (await _p).getInt(_keyGridColumns) ?? 3;
 
   Future<void> setGridColumns(int n) async =>
       (await _p).setInt(_keyGridColumns, n);

@@ -15,19 +15,16 @@ import '../selection/selection_controller.dart';
 import '../selection/selection_actions.dart';
 import '../../core/providers/gallery_refresh_provider.dart';
 import '../albums/indexing_providers.dart';
-enum MediaFilter {
-  all,
-  images,
-  videos,
-  folders,
-}
+
+enum MediaFilter { all, images, videos, folders }
+
 class HomeState {
   final List<MediaItem> items;
   final bool loading;
   final bool loadingMore;
   final bool hasMore;
   final String? error;
- final PermissionState? permissionStatus;
+  final PermissionState? permissionStatus;
 
   final MediaFilter filter;
   final int currentPage;
@@ -47,7 +44,7 @@ class HomeState {
 
   bool get hasPermission =>
       permissionStatus == PermissionState.authorized ||
-          permissionStatus == PermissionState.limited;
+      permissionStatus == PermissionState.limited;
 
   HomeState copyWith({
     List<MediaItem>? items,
@@ -59,19 +56,19 @@ class HomeState {
     MediaFilter? filter,
     int? currentPage,
     int? totalCount,
-  }) =>
-      HomeState(
-        items: items ?? this.items,
-        loading: loading ?? this.loading,
-        loadingMore: loadingMore ?? this.loadingMore,
-        hasMore: hasMore ?? this.hasMore,
-        error: error,
-        permissionStatus: permissionStatus ?? this.permissionStatus,
-        filter: filter ?? this.filter,
-        currentPage: currentPage ?? this.currentPage,
-        totalCount: totalCount ?? this.totalCount,
-      );
+  }) => HomeState(
+    items: items ?? this.items,
+    loading: loading ?? this.loading,
+    loadingMore: loadingMore ?? this.loadingMore,
+    hasMore: hasMore ?? this.hasMore,
+    error: error,
+    permissionStatus: permissionStatus ?? this.permissionStatus,
+    filter: filter ?? this.filter,
+    currentPage: currentPage ?? this.currentPage,
+    totalCount: totalCount ?? this.totalCount,
+  );
 }
+
 class HomeController extends StateNotifier<HomeState> {
   final MediaRepository _repo;
   static const _pageSize = 120;
@@ -91,6 +88,7 @@ class HomeController extends StateNotifier<HomeState> {
         return RequestType.common;
     }
   }
+
   Future<void> loadFirstPage() async {
     if (state.filter == MediaFilter.folders) return;
 
@@ -107,10 +105,7 @@ class HomeController extends StateNotifier<HomeState> {
     state = state.copyWith(permissionStatus: permission);
 
     if (!state.hasPermission) {
-      state = state.copyWith(
-        loading: false,
-        error: AppStrings.errorPermission,
-      );
+      state = state.copyWith(loading: false, error: AppStrings.errorPermission);
       return;
     }
 
@@ -130,10 +125,7 @@ class HomeController extends StateNotifier<HomeState> {
         hasMore: items.length >= _pageSize,
       );
     } catch (e) {
-      state = state.copyWith(
-        loading: false,
-        error: 'Something went wrong: $e',
-      );
+      state = state.copyWith(loading: false, error: 'Something went wrong: $e');
     }
   }
 
@@ -202,19 +194,18 @@ class HomeController extends StateNotifier<HomeState> {
       if (state.hasPermission) {
         await loadFirstPage();
       } else {
-        state = state.copyWith(
-          items: [],
-          error: AppStrings.errorPermission,
-        );
+        state = state.copyWith(items: [], error: AppStrings.errorPermission);
       }
     }
   }
 }
 
-final homeControllerProvider =
-StateNotifierProvider<HomeController, HomeState>((ref) {
-  return HomeController(ref.read(mediaRepositoryProvider));
-});
+final homeControllerProvider = StateNotifierProvider<HomeController, HomeState>(
+  (ref) {
+    return HomeController(ref.read(mediaRepositoryProvider));
+  },
+);
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -224,7 +215,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
-
   final _scrollController = ScrollController();
 
   @override
@@ -283,8 +273,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     });
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: PopScope(
         canPop: !sel.active,
         onPopInvokedWithResult: (didPop, _) {
@@ -309,10 +300,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       ),
                 if (!sel.active)
                   _FilterChips(
-                      current: state.filter, onChanged: ctrl.setFilter),
+                    current: state.filter,
+                    onChanged: ctrl.setFilter,
+                  ),
                 const SizedBox(height: 6),
-                Expanded(
-                    child: _buildBody(context, state, ctrl, sel, selCtrl)),
+                Expanded(child: _buildBody(context, state, ctrl, sel, selCtrl)),
               ],
             ),
           ),
@@ -341,15 +333,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     try {
       final ok = await SelectionActions.share(items);
       if (!ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No shareable files')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No shareable files')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Share failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Share failed: $e')));
       }
     }
   }
@@ -388,15 +380,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
       }
     }
   }
 
-  Widget _buildBody(BuildContext context, HomeState state, HomeController ctrl,
-      SelectionState sel, SelectionController selCtrl) {
+  Widget _buildBody(
+    BuildContext context,
+    HomeState state,
+    HomeController ctrl,
+    SelectionState sel,
+    SelectionController selCtrl,
+  ) {
     if (state.filter == MediaFilter.folders) {
       return const FolderAlbumsTab();
     }
@@ -412,8 +409,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           children: [
             CircularProgressIndicator(color: AppColors.navyDeep),
             SizedBox(height: 16),
-            Text(AppStrings.loadingPhotos,
-                style: TextStyle(color: AppColors.textSecondary)),
+            Text(
+              AppStrings.loadingPhotos,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ],
         ),
       );
@@ -426,16 +425,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.photo_library_outlined,
-                  size: 64, color: AppColors.textHint),
+              const Icon(
+                Icons.photo_library_outlined,
+                size: 64,
+                color: AppColors.textHint,
+              ),
               const SizedBox(height: 16),
-              Text(state.error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppColors.textSecondary)),
+              Text(
+                state.error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
               const SizedBox(height: 16),
               ElevatedButton(
-                  onPressed: ctrl.loadFirstPage,
-                  child: const Text(AppStrings.errorGeneric)),
+                onPressed: ctrl.loadFirstPage,
+                child: const Text(AppStrings.errorGeneric),
+              ),
             ],
           ),
         ),
@@ -444,8 +449,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (state.items.isEmpty) {
       return const Center(
-        child: Text(AppStrings.noPhotos,
-            style: TextStyle(color: AppColors.textSecondary)),
+        child: Text(
+          AppStrings.noPhotos,
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
       );
     }
 
@@ -456,33 +463,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         controller: _scrollController,
         slivers: [
           SliverGrid(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final item = state.items[index];
-                return MediaGridItem(
-                  item: item,
-                  selectionMode: sel.active,
-                  selected: sel.isSelected(item.id),
-                  onLongPress: () => selCtrl.enter(item),
-                  onTap: () {
-                    if (sel.active) {
-                      selCtrl.toggle(item);
-                    } else {
-                      context.push<String>(AppRoutes.detail, extra: {
-                        'id': item.id,
-                        'items': state.items,
-                      }).then((removedId) {
-                        // انحذفت/انتقلت للسكيور أو لمجلد تاني من شاشة العرض
-                        if (removedId == null || !mounted) return;
-                        ctrl.removeByIds([removedId]);
-                        ref.read(folderAlbumsProvider.notifier).load();
-                      });
-                    }
-                  },
-                );
-              },
-              childCount: state.items.length,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final item = state.items[index];
+              return MediaGridItem(
+                item: item,
+                selectionMode: sel.active,
+                selected: sel.isSelected(item.id),
+                onLongPress: () => selCtrl.enter(item),
+                onTap: () {
+                  if (sel.active) {
+                    selCtrl.toggle(item);
+                  } else {
+                    context
+                        .push<String>(
+                          AppRoutes.detail,
+                          extra: {'id': item.id, 'items': state.items},
+                        )
+                        .then((removedId) {
+                          // انحذفت/انتقلت للسكيور أو لمجلد تاني من شاشة العرض
+                          if (removedId == null || !mounted) return;
+                          ctrl.removeByIds([removedId]);
+                          ref.read(folderAlbumsProvider.notifier).load();
+                        });
+                  }
+                },
+              );
+            }, childCount: state.items.length),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: AppSizes.gridCrossAxisCount,
               mainAxisSpacing: AppSizes.gridSpacing,
@@ -494,8 +500,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.navyDeep, strokeWidth: 2)),
+                  child: CircularProgressIndicator(
+                    color: AppColors.navyDeep,
+                    strokeWidth: 2,
+                  ),
+                ),
               ),
             ),
           if (!state.hasMore && state.items.isNotEmpty)
@@ -506,7 +515,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   child: Text(
                     '${AppStrings.loadAllPhotos} (${state.totalCount})',
                     style: const TextStyle(
-                        color: AppColors.textHint, fontSize: 12),
+                      color: AppColors.textHint,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
@@ -536,21 +547,30 @@ class _PermissionDeniedView extends StatelessWidget {
                 color: AppColors.errorRed.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.no_photography_outlined,
-                  color: AppColors.errorRed, size: 40),
+              child: const Icon(
+                Icons.no_photography_outlined,
+                color: AppColors.errorRed,
+                size: 40,
+              ),
             ),
             const SizedBox(height: 24),
-            const Text(AppStrings.errorPermission,
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary)),
+            const Text(
+              AppStrings.errorPermission,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 12),
             const Text(
-            AppStrings.permDeniedBody,
+              AppStrings.permDeniedBody,
               textAlign: TextAlign.center,
-              style:
-              TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.6),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 14,
+                height: 1.6,
+              ),
             ),
             const SizedBox(height: 32),
             SizedBox(
@@ -560,17 +580,22 @@ class _PermissionDeniedView extends StatelessWidget {
                   await PhotoManager.openSetting();
                 },
                 icon: const Icon(Icons.settings_outlined, color: Colors.white),
-                label: const Text(AppStrings.openSettings,
-                    style: TextStyle(color: Colors.white)),
+                label: const Text(
+                  AppStrings.openSettings,
+                  style: TextStyle(color: Colors.white),
+                ),
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.navyDeep),
+                  backgroundColor: AppColors.navyDeep,
+                ),
               ),
             ),
             const SizedBox(height: 12),
             TextButton(
               onPressed: onRetry,
-              child: const Text(AppStrings.checkAgain,
-                  style: TextStyle(color: AppColors.skyBlue)),
+              child: const Text(
+                AppStrings.checkAgain,
+                style: TextStyle(color: AppColors.skyBlue),
+              ),
             ),
           ],
         ),
@@ -578,13 +603,17 @@ class _PermissionDeniedView extends StatelessWidget {
     );
   }
 }
+
 // ── رأس الصفحة العصري ────────────────────────────────────────
 class _HomeHeader extends StatelessWidget {
   final String subtitle;
   final VoidCallback onSearch;
   final VoidCallback onSecure;
-  const _HomeHeader(
-      {required this.subtitle, required this.onSearch, required this.onSecure});
+  const _HomeHeader({
+    required this.subtitle,
+    required this.onSearch,
+    required this.onSecure,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -597,16 +626,23 @@ class _HomeHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('PixMind',
-                    style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5)),
+                const Text(
+                  'PixMind',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(subtitle,
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 13)),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
               ],
             ),
           ),
@@ -624,8 +660,11 @@ class _SelectionHeader extends StatelessWidget {
   final int count;
   final VoidCallback onClose;
   final VoidCallback onSelectAll;
-  const _SelectionHeader(
-      {required this.count, required this.onClose, required this.onSelectAll});
+  const _SelectionHeader({
+    required this.count,
+    required this.onClose,
+    required this.onSelectAll,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -635,17 +674,24 @@ class _SelectionHeader extends StatelessWidget {
         children: [
           _CircleIconBtn(icon: Icons.close_rounded, onTap: onClose),
           const SizedBox(width: 14),
-          Text('$count selected',
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700)),
+          Text(
+            '$count selected',
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const Spacer(),
           TextButton(
             onPressed: onSelectAll,
-            child: const Text('Select all',
-                style: TextStyle(
-                    color: AppColors.navyDeep, fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Select all',
+              style: TextStyle(
+                color: AppColors.navyDeep,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -660,22 +706,22 @@ class _CircleIconBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 44,
-        height: 44,
-        child: Material(
-          color: Colors.white,
-          elevation: 1.5,
-          shadowColor: AppColors.navyDeep.withOpacity(0.2),
-          shape: CircleBorder(
-              side: BorderSide(color: AppColors.navyDeep.withOpacity(0.06))),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onTap,
-            child:
-                Center(child: Icon(icon, color: AppColors.navyDeep, size: 22)),
-          ),
-        ),
-      );
+    width: 44,
+    height: 44,
+    child: Material(
+      color: Colors.white,
+      elevation: 1.5,
+      shadowColor: AppColors.navyDeep.withOpacity(0.2),
+      shape: CircleBorder(
+        side: BorderSide(color: AppColors.navyDeep.withOpacity(0.06)),
+      ),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Center(child: Icon(icon, color: AppColors.navyDeep, size: 22)),
+      ),
+    ),
+  );
 }
 
 // ── رقائق الفلترة (Pills) ────────────────────────────────────
@@ -693,21 +739,25 @@ class _FilterChips extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           _Chip(
-              label: AppStrings.all,
-              active: current == MediaFilter.all,
-              onTap: () => onChanged(MediaFilter.all)),
+            label: AppStrings.all,
+            active: current == MediaFilter.all,
+            onTap: () => onChanged(MediaFilter.all),
+          ),
           _Chip(
-              label: AppStrings.photos,
-              active: current == MediaFilter.images,
-              onTap: () => onChanged(MediaFilter.images)),
+            label: AppStrings.photos,
+            active: current == MediaFilter.images,
+            onTap: () => onChanged(MediaFilter.images),
+          ),
           _Chip(
-              label: AppStrings.videos,
-              active: current == MediaFilter.videos,
-              onTap: () => onChanged(MediaFilter.videos)),
+            label: AppStrings.videos,
+            active: current == MediaFilter.videos,
+            onTap: () => onChanged(MediaFilter.videos),
+          ),
           _Chip(
-              label: AppStrings.folders,
-              active: current == MediaFilter.folders,
-              onTap: () => onChanged(MediaFilter.folders)),
+            label: AppStrings.folders,
+            active: current == MediaFilter.folders,
+            onTap: () => onChanged(MediaFilter.folders),
+          ),
         ],
       ),
     );
@@ -741,9 +791,10 @@ class _Chip extends StatelessWidget {
             boxShadow: active
                 ? [
                     BoxShadow(
-                        color: AppColors.navyDeep.withOpacity(0.25),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3))
+                      color: AppColors.navyDeep.withOpacity(0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
                   ]
                 : null,
           ),
@@ -780,9 +831,10 @@ class _SelectionActionBar extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
         boxShadow: [
           BoxShadow(
-              color: AppColors.navyDeep.withOpacity(0.12),
-              blurRadius: 16,
-              offset: const Offset(0, -4)),
+            color: AppColors.navyDeep.withOpacity(0.12),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
         ],
       ),
       child: SafeArea(
@@ -793,18 +845,21 @@ class _SelectionActionBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _BarBtn(
-                  icon: Icons.ios_share_rounded,
-                  label: 'Share',
-                  onTap: onShare),
+                icon: Icons.ios_share_rounded,
+                label: 'Share',
+                onTap: onShare,
+              ),
               _BarBtn(
-                  icon: Icons.grid_view_rounded,
-                  label: 'Collage',
-                  onTap: onCollage),
+                icon: Icons.grid_view_rounded,
+                label: 'Collage',
+                onTap: onCollage,
+              ),
               _BarBtn(
-                  icon: Icons.delete_outline_rounded,
-                  label: 'Delete',
-                  onTap: onDelete,
-                  color: AppColors.errorRed),
+                icon: Icons.delete_outline_rounded,
+                label: 'Delete',
+                onTap: onDelete,
+                color: AppColors.errorRed,
+              ),
             ],
           ),
         ),
@@ -827,17 +882,25 @@ class _BarBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 6),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(label,
-                style: TextStyle(
-                    color: color, fontSize: 11.5, fontWeight: FontWeight.w600)),
-          ]),
-        ),
-      );
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(14),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

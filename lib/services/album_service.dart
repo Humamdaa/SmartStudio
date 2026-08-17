@@ -48,16 +48,20 @@ class AlbumService {
     final rel = await relativePathOf(target);
     if (rel != null) {
       try {
-        final ok = await PhotoManager.editor.android
-            .moveAssetsToPath(entities: [asset], targetPath: rel);
+        final ok = await PhotoManager.editor.android.moveAssetsToPath(
+          entities: [asset],
+          targetPath: rel,
+        );
         if (ok) return true;
       } catch (_) {
         // منجرّب الطريقة القديمة تحت
       }
     }
     try {
-      return await PhotoManager.editor.android
-          .moveAssetToAnother(entity: asset, target: target);
+      return await PhotoManager.editor.android.moveAssetToAnother(
+        entity: asset,
+        target: target,
+      );
     } catch (_) {
       return false;
     }
@@ -85,8 +89,10 @@ class AlbumService {
     required AssetPathEntity target,
   }) async {
     try {
-      await PhotoManager.editor
-          .copyAssetToPath(asset: asset, pathEntity: target);
+      await PhotoManager.editor.copyAssetToPath(
+        asset: asset,
+        pathEntity: target,
+      );
       return true;
     } catch (_) {
       return false;

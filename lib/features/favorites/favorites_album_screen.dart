@@ -55,14 +55,17 @@ class _FavoritesAlbumScreenState extends ConsumerState<FavoritesAlbumScreen> {
     ref.listen<Set<String>>(favoritesProvider, (_, next) => _resolve(next));
     final favs = ref.watch(favoritesProvider);
     // آخر صورة أضيفت للمفضلة تظهر أول واحدة (نعكس ترتيب الإضافة)
-    final items = favs.toList().reversed
+    final items = favs
+        .toList()
+        .reversed
         .where(_cache.containsKey)
         .map((e) => _cache[e]!)
         .toList();
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: AppColors.lightBackground,
         body: SafeArea(
@@ -80,16 +83,22 @@ class _FavoritesAlbumScreenState extends ConsumerState<FavoritesAlbumScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Favorites',
-                              style: TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.5)),
-                          Text('${favs.length} items',
-                              style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 13)),
+                          const Text(
+                            'Favorites',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            '${favs.length} items',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -100,27 +109,30 @@ class _FavoritesAlbumScreenState extends ConsumerState<FavoritesAlbumScreen> {
                 child: _loading
                     ? const Center(
                         child: CircularProgressIndicator(
-                            color: AppColors.navyDeep))
+                          color: AppColors.navyDeep,
+                        ),
+                      )
                     : items.isEmpty
-                        ? _empty()
-                        : GridView.builder(
-                            padding:
-                                const EdgeInsets.all(AppSizes.gridSpacing),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
+                    ? _empty()
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(AppSizes.gridSpacing),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: AppSizes.gridCrossAxisCount,
                               mainAxisSpacing: AppSizes.gridSpacing,
                               crossAxisSpacing: AppSizes.gridSpacing,
                             ),
-                            itemCount: items.length,
-                            itemBuilder: (context, i) {
-                              final item = items[i];
-                              return MediaGridItem(
-                                item: item,
-                                onTap: () => context.push<String>(
+                        itemCount: items.length,
+                        itemBuilder: (context, i) {
+                          final item = items[i];
+                          return MediaGridItem(
+                            item: item,
+                            onTap: () => context
+                                .push<String>(
                                   AppRoutes.detail,
                                   extra: {'id': item.id, 'items': items},
-                                ).then((removedId) {
+                                )
+                                .then((removedId) {
                                   // انحذفت/انتقلت للسكيور — بطّل مفضّلة فوراً
                                   if (removedId != null) {
                                     ref
@@ -128,9 +140,9 @@ class _FavoritesAlbumScreenState extends ConsumerState<FavoritesAlbumScreen> {
                                         .toggle(removedId);
                                   }
                                 }),
-                              );
-                            },
-                          ),
+                          );
+                        },
+                      ),
               ),
             ],
           ),
@@ -140,31 +152,39 @@ class _FavoritesAlbumScreenState extends ConsumerState<FavoritesAlbumScreen> {
   }
 
   Widget _empty() => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: AppColors.errorRed.withOpacity(0.08),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.favorite_border_rounded,
-                  color: AppColors.errorRed.withOpacity(0.6), size: 44),
-            ),
-            const SizedBox(height: 20),
-            const Text('No favorites yet',
-                style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500)),
-            const SizedBox(height: 6),
-            const Text('Tap the heart on any photo to add it here',
-                style: TextStyle(color: AppColors.textHint, fontSize: 13)),
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            color: AppColors.errorRed.withOpacity(0.08),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.favorite_border_rounded,
+            color: AppColors.errorRed.withOpacity(0.6),
+            size: 44,
+          ),
         ),
-      );
+        const SizedBox(height: 20),
+        const Text(
+          'No favorites yet',
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Tap the heart on any photo to add it here',
+          style: TextStyle(color: AppColors.textHint, fontSize: 13),
+        ),
+      ],
+    ),
+  );
 }
 
 class _CircleBack extends StatelessWidget {
@@ -172,21 +192,26 @@ class _CircleBack extends StatelessWidget {
   const _CircleBack({required this.onTap});
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 42,
-        height: 42,
-        child: Material(
-          color: Colors.white,
-          elevation: 1.5,
-          shadowColor: AppColors.navyDeep.withOpacity(0.2),
-          shape: CircleBorder(
-              side: BorderSide(color: AppColors.navyDeep.withOpacity(0.06))),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onTap,
-            child: const Center(
-                child: Icon(Icons.arrow_back_rounded,
-                    color: AppColors.navyDeep, size: 20)),
+    width: 42,
+    height: 42,
+    child: Material(
+      color: Colors.white,
+      elevation: 1.5,
+      shadowColor: AppColors.navyDeep.withOpacity(0.2),
+      shape: CircleBorder(
+        side: BorderSide(color: AppColors.navyDeep.withOpacity(0.06)),
+      ),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const Center(
+          child: Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.navyDeep,
+            size: 20,
           ),
         ),
-      );
+      ),
+    ),
+  );
 }

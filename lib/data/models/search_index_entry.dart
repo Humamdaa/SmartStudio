@@ -35,14 +35,16 @@ class SearchIndexEntry {
     required this.indexedAt,
   });
 
-  String get searchableText => SearchVocabulary.normalize([
-        title,
-        objects.join(' '),
-        scenes.join(' '),
-        colors.join(' '),
-        ocrText,
-        metadata,
-      ].join(' '));
+  String get searchableText => SearchVocabulary.normalize(
+    [
+      title,
+      objects.join(' '),
+      scenes.join(' '),
+      colors.join(' '),
+      ocrText,
+      metadata,
+    ].join(' '),
+  );
 
   Map<String, dynamic> toDatabase() {
     return {

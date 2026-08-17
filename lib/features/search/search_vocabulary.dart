@@ -2,8 +2,7 @@ class SearchVocabulary {
   SearchVocabulary._();
 
   static final RegExp _arabicMarks = RegExp(r'[\u064B-\u065F\u0670]');
-  static final RegExp _separators =
-      RegExp(r'[^a-z0-9\u0600-\u06FF]+');
+  static final RegExp _separators = RegExp(r'[^a-z0-9\u0600-\u06FF]+');
 
   static const Set<String> _stopWords = {
     'a',
@@ -338,9 +337,7 @@ class SearchVocabulary {
       final withoutArticle = token.startsWith('ال') && token.length > 3
           ? token.substring(2)
           : token;
-      final canonical = (_aliases[token] ??
-              _aliases[withoutArticle] ??
-              token)
+      final canonical = (_aliases[token] ?? _aliases[withoutArticle] ?? token)
           .replaceAll('_', ' ');
       if (canonical.isNotEmpty && !terms.contains(canonical)) {
         terms.add(canonical);

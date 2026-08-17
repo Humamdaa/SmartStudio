@@ -59,13 +59,8 @@ class ObjectDetectionService {
       final confidenceByLabel = <String, double>{};
       for (final raw in rawBoxes) {
         if (raw is! Map) continue;
-        final box = raw.map(
-          (key, value) => MapEntry(key.toString(), value),
-        );
-        final label = (box['class'] ??
-                box['className'] ??
-                box['label'] ??
-                '')
+        final box = raw.map((key, value) => MapEntry(key.toString(), value));
+        final label = (box['class'] ?? box['className'] ?? box['label'] ?? '')
             .toString()
             .trim()
             .toLowerCase();

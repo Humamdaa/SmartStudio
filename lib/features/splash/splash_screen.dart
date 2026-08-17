@@ -7,7 +7,6 @@ import '../../core/router/app_router.dart';
 import '../../data/prefs/app_prefs.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -26,11 +25,15 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
 
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900));
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
 
-    _fade  = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
-    _scale = Tween<double>(begin: 0.85, end: 1.0)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
+    _scale = Tween<double>(
+      begin: 0.85,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
 
     _ctrl.forward();
     _navigate();
@@ -52,7 +55,8 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
-    final granted = permission == PermissionState.authorized ||
+    final granted =
+        permission == PermissionState.authorized ||
         permission == PermissionState.limited;
 
     if (granted) {
@@ -115,13 +119,17 @@ class _SplashScreenState extends State<SplashScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
-                    3, (i) => _PulseDot(delay: Duration(milliseconds: i * 180))),
+                  3,
+                  (i) => _PulseDot(delay: Duration(milliseconds: i * 180)),
+                ),
               ),
               const SizedBox(height: 20),
               Text(
                 AppStrings.version,
                 style: TextStyle(
-                    color: Colors.white.withOpacity(0.25), fontSize: 12),
+                  color: Colors.white.withOpacity(0.25),
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -148,13 +156,20 @@ class _PulseDotState extends State<_PulseDot>
   void initState() {
     super.initState();
     _c = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 550));
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
     _a = CurvedAnimation(parent: _c, curve: Curves.easeInOut);
-    Future.delayed(widget.delay, () { if (mounted) _c.repeat(reverse: true); });
+    Future.delayed(widget.delay, () {
+      if (mounted) _c.repeat(reverse: true);
+    });
   }
 
   @override
-  void dispose() { _c.dispose(); super.dispose(); }
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -162,9 +177,12 @@ class _PulseDotState extends State<_PulseDot>
     child: FadeTransition(
       opacity: _a,
       child: Container(
-        width: 7, height: 7,
+        width: 7,
+        height: 7,
         decoration: const BoxDecoration(
-            color: AppColors.mintAccent, shape: BoxShape.circle),
+          color: AppColors.mintAccent,
+          shape: BoxShape.circle,
+        ),
       ),
     ),
   );

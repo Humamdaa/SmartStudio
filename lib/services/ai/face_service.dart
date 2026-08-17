@@ -173,7 +173,9 @@ class FaceService {
         continue;
       }
 
-      final groups = await _database.getPersonGroupsDetailed(visibleOnly: false);
+      final groups = await _database.getPersonGroupsDetailed(
+        visibleOnly: false,
+      );
       final prototypes = await _database.getPersonPrototypeEmbeddings(
         perPerson: 5,
         minQuality: 0.24,
@@ -203,15 +205,12 @@ class FaceService {
       // rebuild people), but it is not allowed to contaminate an existing
       // person's cluster automatically. False splits are much easier to fix
       // than two different people being merged into one album.
-      final canAutoMatch = prepared.qualityScore >= 0.30 &&
-          prepared.poseScore >= 0.35;
-      final matched = canAutoMatch &&
+      final canAutoMatch =
+          prepared.qualityScore >= 0.30 && prepared.poseScore >= 0.35;
+      final matched =
+          canAutoMatch &&
           best != null &&
-          _acceptMatch(
-            best,
-            runnerUp,
-            faceQuality: prepared.qualityScore,
-          );
+          _acceptMatch(best, runnerUp, faceQuality: prepared.qualityScore);
 
       if (kDebugMode && best != null) {
         final runnerScore = runnerUp?.bestScore;
@@ -325,10 +324,8 @@ class FaceService {
         : 0.0;
     final strongThreshold =
         (best.person.isNamed ? _namedStrongThreshold : _baseStrongThreshold) +
-            lowQualityPenalty;
-    final margin = runnerUp == null
-        ? 1.0
-        : best.bestScore - runnerUp.bestScore;
+        lowQualityPenalty;
+    final margin = runnerUp == null ? 1.0 : best.bestScore - runnerUp.bestScore;
 
     // Very strong identity evidence can stand alone. Otherwise ask for two
     // supporting representatives and a clear lead over the next person.
@@ -336,7 +333,8 @@ class FaceService {
         (margin >= _runnerUpMargin || best.bestScore >= 0.82)) {
       return true;
     }
-    final supported = best.bestScore >= _supportedThreshold + lowQualityPenalty &&
+    final supported =
+        best.bestScore >= _supportedThreshold + lowQualityPenalty &&
         best.supportCount >= 2 &&
         best.supportAverage >= _prototypeSupportThreshold &&
         margin >= _runnerUpMargin + 0.01;
@@ -398,8 +396,7 @@ class FaceService {
     interpreter.run(input, output);
 
     final yaw = (face.headEulerAngleY ?? 0.0).abs();
-    final poseScore = (1.0 -
-            ((yaw / 50.0) * 0.62 + (roll.abs() / 40.0) * 0.38))
+    final poseScore = (1.0 - ((yaw / 50.0) * 0.62 + (roll.abs() / 40.0) * 0.38))
         .clamp(0.0, 1.0)
         .toDouble();
     final areaRatio =
@@ -408,11 +405,10 @@ class FaceService {
         .clamp(0.0, 1.0)
         .toDouble();
     final visualScore = _visualFaceQuality(aligned);
-    final qualityScore = (sizeScore * 0.45 +
-            poseScore * 0.35 +
-            visualScore * 0.20)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final qualityScore =
+        (sizeScore * 0.45 + poseScore * 0.35 + visualScore * 0.20)
+            .clamp(0.0, 1.0)
+            .toDouble();
 
     return _PreparedFace(
       embedding: _normalize(output.first),
@@ -480,7 +476,9 @@ class FaceService {
     await _database.recomputeAllPersonGroups();
     var merges = 0;
     while (merges < maxMerges) {
-      final groups = await _database.getPersonGroupsDetailed(visibleOnly: false);
+      final groups = await _database.getPersonGroupsDetailed(
+        visibleOnly: false,
+      );
       if (groups.length < 2) break;
       final prototypes = await _database.getPersonPrototypeEmbeddings(
         perPerson: 4,
@@ -517,26 +515,28 @@ class FaceService {
             }
           }
           crossScores.sort((a, b) => b.compareTo(a));
-          final bestCross = crossScores.isEmpty ? centroidScore : crossScores.first;
+          final bestCross = crossScores.isEmpty
+              ? centroidScore
+              : crossScores.first;
           final topTwoAverage = crossScores.length >= 2
               ? (crossScores[0] + crossScores[1]) / 2
               : bestCross;
 
           final threshold = first.isNamed || second.isNamed ? 0.805 : 0.765;
-          final sameNamed = first.isNamed &&
+          final sameNamed =
+              first.isNamed &&
               second.isNamed &&
               first.searchName == second.searchName &&
               first.searchName.isNotEmpty;
           final accepted = sameNamed
               ? bestCross >= 0.73 && centroidScore >= 0.66
               : bestCross >= threshold &&
-                  centroidScore >= threshold - 0.075 &&
-                  topTwoAverage >= threshold - 0.035;
+                    centroidScore >= threshold - 0.075 &&
+                    topTwoAverage >= threshold - 0.035;
           if (!accepted) continue;
 
-          final combined = bestCross * 0.55 +
-              centroidScore * 0.30 +
-              topTwoAverage * 0.15;
+          final combined =
+              bestCross * 0.55 + centroidScore * 0.30 + topTwoAverage * 0.15;
           if (strongest == null || combined > strongest.score) {
             strongest = _MergeCandidate(first, second, combined);
           }
@@ -574,10 +574,12 @@ class FaceService {
   ) {
     if (centroid.length != sample.length || centroid.isEmpty) return sample;
     final count = math.max(1, oldSampleCount);
-    return _normalize(List.generate(
-      sample.length,
-      (index) => (centroid[index] * count + sample[index]) / (count + 1),
-    ));
+    return _normalize(
+      List.generate(
+        sample.length,
+        (index) => (centroid[index] * count + sample[index]) / (count + 1),
+      ),
+    );
   }
 
   List<double> _normalize(List<double> values) {

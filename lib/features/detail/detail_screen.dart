@@ -774,19 +774,41 @@ class _OptionsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(AppSizes.lg),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Container(width: 36, height: 4,
-          decoration: BoxDecoration(color: Colors.white24,
-              borderRadius: BorderRadius.circular(2))),
-      const SizedBox(height: 20),
-      const _Opt(icon: Icons.info_outline, label: 'File Info', action: 'info'),
-      if (!isVideo)
-        const _Opt(icon: Icons.text_fields, label: 'Live Text / OCR', action: 'ocr'),
-      if (!isVideo)
-        const _Opt(icon: Icons.face_retouching_natural, label: 'People in Photo', action: 'people'),
-      const _Opt(
-          icon: Icons.copy_all_outlined, label: 'Copy to Album', action: 'copy'),
-      const _Opt(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 36,
+          height: 4,
+          decoration: BoxDecoration(
+            color: Colors.white24,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _Opt(
+          icon: Icons.info_outline,
+          label: 'File Info',
+          action: 'info',
+        ),
+        if (!isVideo)
+          const _Opt(
+            icon: Icons.text_fields,
+            label: 'Live Text / OCR',
+            action: 'ocr',
+          ),
+        if (!isVideo)
+          const _Opt(
+            icon: Icons.face_retouching_natural,
+            label: 'People in Photo',
+            action: 'people',
+          ),
+        const _Opt(
+          icon: Icons.copy_all_outlined,
+          label: 'Copy to Album',
+          action: 'copy',
+        ),
+        const _Opt(
           icon: Icons.drive_file_move_outline,
           label: 'Move to Album',
           action: 'move',

@@ -10,15 +10,7 @@ import '../features/search/search_scope.dart' as precise;
 import 'gallery/background_indexer.dart';
 import 'gallery/precise_indexer.dart';
 
-enum SmartSearchDomain {
-  general,
-  people,
-  ocr,
-  objects,
-  colors,
-  scenes,
-  date,
-}
+enum SmartSearchDomain { general, people, ocr, objects, colors, scenes, date }
 
 class SmartSearchResolvedHit {
   final MediaItem item;
@@ -53,10 +45,10 @@ class SmartSearchBridge {
     MediaRepository? mediaRepository,
     PreciseIndexer? indexer,
     DatabaseHelper? database,
-  })  : _search = searchRepository ?? PreciseSearchRepository(),
-        _media = mediaRepository ?? MediaRepository(),
-        _indexer = indexer ?? PreciseIndexer(),
-        _database = database ?? DatabaseHelper.instance;
+  }) : _search = searchRepository ?? PreciseSearchRepository(),
+       _media = mediaRepository ?? MediaRepository(),
+       _indexer = indexer ?? PreciseIndexer(),
+       _database = database ?? DatabaseHelper.instance;
 
   final PreciseSearchRepository _search;
   final MediaRepository _media;
@@ -75,10 +67,9 @@ class SmartSearchBridge {
     for (final hit in hits) {
       final asset = await AssetEntity.fromId(hit.assetId);
       if (asset == null) continue;
-      resolved.add(SmartSearchResolvedHit(
-        item: MediaItem.fromAsset(asset),
-        hit: hit,
-      ));
+      resolved.add(
+        SmartSearchResolvedHit(item: MediaItem.fromAsset(asset), hit: hit),
+      );
     }
     return resolved;
   }
@@ -142,7 +133,8 @@ class SmartSearchBridge {
       pausedReason ??= batch.pausedReason;
       yoloReady = yoloReady && batch.yoloReady;
       yoloError ??= batch.yoloError;
-      if (batch.cancelled || batch.pausedReason != null || batch.queueEmpty) break;
+      if (batch.cancelled || batch.pausedReason != null || batch.queueEmpty)
+        break;
       remaining = await _database.getPendingQueueCount(minPriority: priority);
     }
 
@@ -171,8 +163,7 @@ class SmartSearchBridge {
     var yoloReady = true;
     String? yoloError;
 
-    var remaining =
-        await _database.getPendingQueueCount(minPriority: priority);
+    var remaining = await _database.getPendingQueueCount(minPriority: priority);
     while (remaining > 0 && !(shouldCancel?.call() ?? false)) {
       final batch = await _indexer.processQueueBatch(
         batchSize: remaining > 8 ? 8 : remaining,
@@ -196,8 +187,7 @@ class SmartSearchBridge {
       if (batch.cancelled || batch.pausedReason != null || batch.queueEmpty) {
         break;
       }
-      remaining =
-          await _database.getPendingQueueCount(minPriority: priority);
+      remaining = await _database.getPendingQueueCount(minPriority: priority);
     }
 
     return SmartIndexRunSummary(

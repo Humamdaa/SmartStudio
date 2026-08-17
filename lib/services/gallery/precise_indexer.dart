@@ -14,7 +14,8 @@ import '../ai/scene_label_service.dart';
 import '../device/device_health_service.dart';
 
 typedef IndexProgressCallback = void Function(IndexProgress progress);
-typedef QueueProgressCallback = void Function(QueuePreparationProgress progress);
+typedef QueueProgressCallback =
+    void Function(QueuePreparationProgress progress);
 typedef IndexCancellationCheck = bool Function();
 typedef IndexPauseWaiter = Future<void> Function();
 
@@ -23,9 +24,9 @@ class PreciseIndexer {
     MediaRepository? mediaRepository,
     PreciseSearchRepository? searchRepository,
     DatabaseHelper? database,
-  })  : _mediaRepository = mediaRepository ?? MediaRepository(),
-        _searchRepository = searchRepository ?? PreciseSearchRepository(),
-        _database = database ?? DatabaseHelper.instance;
+  }) : _mediaRepository = mediaRepository ?? MediaRepository(),
+       _searchRepository = searchRepository ?? PreciseSearchRepository(),
+       _database = database ?? DatabaseHelper.instance;
 
   final MediaRepository _mediaRepository;
   final PreciseSearchRepository _searchRepository;
@@ -54,10 +55,12 @@ class PreciseIndexer {
         priority: 0,
       );
       discovered += assets.length;
-      onProgress?.call(QueuePreparationProgress(
-        discovered: discovered.clamp(0, total).toInt(),
-        total: total,
-      ));
+      onProgress?.call(
+        QueuePreparationProgress(
+          discovered: discovered.clamp(0, total).toInt(),
+          total: total,
+        ),
+      );
     }
     return total;
   }
@@ -77,7 +80,6 @@ class PreciseIndexer {
       force: force,
     );
   }
-
 
   /// Enqueues the next [limit] photos that have not yet been fully processed
   /// by the current presentation pipeline. Scanning is newest -> oldest, so
@@ -100,7 +102,11 @@ class PreciseIndexer {
 
     const pageSize = 120;
     final selected = <String>[];
-    for (var start = 0; start < total && selected.length < limit; start += pageSize) {
+    for (
+      var start = 0;
+      start < total && selected.length < limit;
+      start += pageSize
+    ) {
       final end = (start + pageSize) > total ? total : start + pageSize;
       final assets = await _mediaRepository.loadAssetRange(
         type: RequestType.image,
@@ -117,11 +123,7 @@ class PreciseIndexer {
     }
 
     if (selected.isEmpty) return 0;
-    await _database.enqueueAssets(
-      selected,
-      priority: priority,
-      force: false,
-    );
+    await _database.enqueueAssets(selected, priority: priority, force: false);
     return selected.length;
   }
 
@@ -136,11 +138,13 @@ class PreciseIndexer {
     bool forceArabicOcr = false,
   }) async {
     final detector = ObjectDetectionService.instance;
-    onProgress(const IndexProgress(
-      processed: 0,
-      total: 0,
-      phase: 'جاري تجهيز نماذج الذكاء المحلي…',
-    ));
+    onProgress(
+      const IndexProgress(
+        processed: 0,
+        total: 0,
+        phase: 'جاري تجهيز نماذج الذكاء المحلي…',
+      ),
+    );
     final yoloReady = await detector.initialize();
     final ids = await _database.claimPendingAssets(
       limit: batchSize,
@@ -216,12 +220,14 @@ class PreciseIndexer {
         debugPrint('PixMind index error for ${asset.id}: $error\n$stackTrace');
       }
 
-      onProgress(IndexProgress(
-        processed: processed,
-        total: ids.length,
-        phase: 'تم الحفظ؛ ننتقل للصورة التالية…',
-        assetName: asset.title,
-      ));
+      onProgress(
+        IndexProgress(
+          processed: processed,
+          total: ids.length,
+          phase: 'تم الحفظ؛ ننتقل للصورة التالية…',
+          assetName: asset.title,
+        ),
+      );
       // A breather so the UI stays responsive. Kept only for background work:
       // in the foreground 90ms per photo added up to over two hours of pure
       // sleeping across a library this size.
@@ -231,11 +237,13 @@ class PreciseIndexer {
     }
 
     if (processed > 0 && !cancelled) {
-      onProgress(IndexProgress(
-        processed: processed,
-        total: ids.length,
-        phase: 'تحسين ألبومات الأشخاص ودمج التكرارات الآمنة…',
-      ));
+      onProgress(
+        IndexProgress(
+          processed: processed,
+          total: ids.length,
+          phase: 'تحسين ألبومات الأشخاص ودمج التكرارات الآمنة…',
+        ),
+      );
       try {
         await FaceService.instance.refineClusters(maxMerges: 6);
       } catch (error, stackTrace) {
@@ -274,12 +282,14 @@ class PreciseIndexer {
     required IndexPauseWaiter waitWhilePaused,
     required bool forceArabicOcr,
   }) async {
-    onProgress(IndexProgress(
-      processed: processed,
-      total: total,
-      phase: 'كشف العناصر والألوان…',
-      assetName: asset.title,
-    ));
+    onProgress(
+      IndexProgress(
+        processed: processed,
+        total: total,
+        phase: 'كشف العناصر والألوان…',
+        assetName: asset.title,
+      ),
+    );
     final thumbnail = await asset.thumbnailDataWithSize(
       const ThumbnailSize(640, 640),
       quality: 86,
@@ -287,7 +297,8 @@ class PreciseIndexer {
     var objects = const <String>[];
     var colors = const <String>[];
     if (thumbnail != null) {
-      if (yoloReady) objects = await ObjectDetectionService.instance.detect(thumbnail);
+      if (yoloReady)
+        objects = await ObjectDetectionService.instance.detect(thumbnail);
       colors = ColorService.dominantColors(thumbnail);
     }
 
@@ -300,12 +311,14 @@ class PreciseIndexer {
     var faceCount = 0;
     final file = await asset.file;
     if (file != null) {
-      onProgress(IndexProgress(
-        processed: processed,
-        total: total,
-        phase: 'فهم المشهد وقراءة النص…',
-        assetName: asset.title,
-      ));
+      onProgress(
+        IndexProgress(
+          processed: processed,
+          total: total,
+          phase: 'فهم المشهد وقراءة النص…',
+          assetName: asset.title,
+        ),
+      );
       scenes = await SceneLabelService.instance.labelImage(file.path);
       final arabicEnabled = await AppPrefs.instance.arabicOcrEnabled;
       ocr = await OcrService.instance.extractCombinedText(
@@ -313,18 +326,20 @@ class PreciseIndexer {
         arabic: !arabicEnabled
             ? ArabicOcrMode.off
             : forceArabicOcr
-                ? ArabicOcrMode.force
-                : ArabicOcrMode.auto,
+            ? ArabicOcrMode.force
+            : ArabicOcrMode.auto,
       );
 
       await waitWhilePaused();
       if (shouldCancel()) throw const _GracefulIndexInterruption();
-      onProgress(IndexProgress(
-        processed: processed,
-        total: total,
-        phase: 'كشف الوجوه وتجميع الأشخاص…',
-        assetName: asset.title,
-      ));
+      onProgress(
+        IndexProgress(
+          processed: processed,
+          total: total,
+          phase: 'كشف الوجوه وتجميع الأشخاص…',
+          assetName: asset.title,
+        ),
+      );
       Object? faceStageError;
       try {
         final faceResult = await FaceService.instance.analyzeAndStore(
@@ -338,7 +353,9 @@ class PreciseIndexer {
         // YOLO/scene/OCR results just because MobileFaceNet or ML Kit failed.
         faceStageError = error;
         faceCount = await _database.getFaceScanCount(asset.id);
-        debugPrint('PixMind face stage error for ${asset.id}: $error\n$stackTrace');
+        debugPrint(
+          'PixMind face stage error for ${asset.id}: $error\n$stackTrace',
+        );
       }
 
       final metadata = _metadataFor(
@@ -346,22 +363,24 @@ class PreciseIndexer {
         hasText: ocr.text.trim().isNotEmpty,
         scenes: scenes,
       );
-      await _searchRepository.save(SearchIndexEntry(
-        assetId: asset.id,
-        title: asset.title ?? '',
-        takenAt: asset.createDateTime,
-        width: asset.width,
-        height: asset.height,
-        objects: objects,
-        scenes: scenes,
-        colors: colors,
-        ocrText: ocr.text,
-        ocrScripts: ocr.scripts,
-        metadata: metadata,
-        people: people,
-        faceCount: faceCount,
-        indexedAt: DateTime.now(),
-      ));
+      await _searchRepository.save(
+        SearchIndexEntry(
+          assetId: asset.id,
+          title: asset.title ?? '',
+          takenAt: asset.createDateTime,
+          width: asset.width,
+          height: asset.height,
+          objects: objects,
+          scenes: scenes,
+          colors: colors,
+          ocrText: ocr.text,
+          ocrScripts: ocr.scripts,
+          metadata: metadata,
+          people: people,
+          faceCount: faceCount,
+          indexedAt: DateTime.now(),
+        ),
+      );
       if (faceStageError != null) {
         // Faces are an enrichment stage. Keep the successful object/scene/OCR
         // index and mark the queue item done instead of re-running every heavy
@@ -379,22 +398,24 @@ class PreciseIndexer {
       hasText: ocr.text.trim().isNotEmpty,
       scenes: scenes,
     );
-    await _searchRepository.save(SearchIndexEntry(
-      assetId: asset.id,
-      title: asset.title ?? '',
-      takenAt: asset.createDateTime,
-      width: asset.width,
-      height: asset.height,
-      objects: objects,
-      scenes: scenes,
-      colors: colors,
-      ocrText: ocr.text,
-      ocrScripts: ocr.scripts,
-      metadata: metadata,
-      people: people,
-      faceCount: faceCount,
-      indexedAt: DateTime.now(),
-    ));
+    await _searchRepository.save(
+      SearchIndexEntry(
+        assetId: asset.id,
+        title: asset.title ?? '',
+        takenAt: asset.createDateTime,
+        width: asset.width,
+        height: asset.height,
+        objects: objects,
+        scenes: scenes,
+        colors: colors,
+        ocrText: ocr.text,
+        ocrScripts: ocr.scripts,
+        metadata: metadata,
+        people: people,
+        faceCount: faceCount,
+        indexedAt: DateTime.now(),
+      ),
+    );
   }
 
   String _metadataFor(
@@ -403,8 +424,18 @@ class PreciseIndexer {
     required List<String> scenes,
   }) {
     const months = [
-      'january', 'february', 'march', 'april', 'may', 'june',
-      'july', 'august', 'september', 'october', 'november', 'december',
+      'january',
+      'february',
+      'march',
+      'april',
+      'may',
+      'june',
+      'july',
+      'august',
+      'september',
+      'october',
+      'november',
+      'december',
     ];
     final date = asset.createDateTime;
     final orientation = asset.width >= asset.height
@@ -415,7 +446,8 @@ class PreciseIndexer {
         : '';
     final textHint = hasText ? 'text document كتابة نص مستند وثيقة' : '';
     final sceneText = scenes.join(' ').toLowerCase();
-    final documentHint = sceneText.contains('receipt') ||
+    final documentHint =
+        sceneText.contains('receipt') ||
             sceneText.contains('document') ||
             sceneText.contains('paper')
         ? 'document receipt invoice فاتورة ايصال مستند'
@@ -441,11 +473,13 @@ class QueuePreparationProgress {
   final int discovered;
   final int total;
 
-  const QueuePreparationProgress({required this.discovered, required this.total});
+  const QueuePreparationProgress({
+    required this.discovered,
+    required this.total,
+  });
 
-  double get progress => total == 0
-      ? 0
-      : (discovered / total).clamp(0.0, 1.0).toDouble();
+  double get progress =>
+      total == 0 ? 0 : (discovered / total).clamp(0.0, 1.0).toDouble();
 }
 
 class IndexProgress {

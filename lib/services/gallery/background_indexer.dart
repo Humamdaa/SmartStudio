@@ -55,10 +55,10 @@ class BackgroundIndexService {
   bool _initialized = false;
 
   Constraints get _constraints => Constraints(
-        networkType: NetworkType.notRequired,
-        requiresBatteryNotLow: true,
-        requiresStorageNotLow: true,
-      );
+    networkType: NetworkType.notRequired,
+    requiresBatteryNotLow: true,
+    requiresStorageNotLow: true,
+  );
 
   Future<void> initialize() async {
     if (_initialized || !Platform.isAndroid) return;

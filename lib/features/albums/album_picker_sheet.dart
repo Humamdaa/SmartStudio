@@ -23,11 +23,7 @@ class AlbumPickerSheet extends StatefulWidget {
   /// المسار النسبي للمجلد الحالي — ما في فايدة نعرضه كوجهة.
   final String? currentAlbumId;
 
-  const AlbumPickerSheet({
-    super.key,
-    required this.title,
-    this.currentAlbumId,
-  });
+  const AlbumPickerSheet({super.key, required this.title, this.currentAlbumId});
 
   @override
   State<AlbumPickerSheet> createState() => _AlbumPickerSheetState();
@@ -66,8 +62,9 @@ class _AlbumPickerSheetState extends State<AlbumPickerSheet> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, controller.text.trim()),
             child: const Text('Create'),
@@ -96,32 +93,44 @@ class _AlbumPickerSheetState extends State<AlbumPickerSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
               child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(2))),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(widget.title,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700)),
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
             ListTile(
-              leading:
-                  const Icon(Icons.create_new_folder_outlined, color: AppColors.mintAccent),
-              title: const Text('New album',
-                  style: TextStyle(
-                      color: AppColors.mintAccent,
-                      fontWeight: FontWeight.w600)),
-              subtitle: const Text('Creates a real folder on your device',
-                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              leading: const Icon(
+                Icons.create_new_folder_outlined,
+                color: AppColors.mintAccent,
+              ),
+              title: const Text(
+                'New album',
+                style: TextStyle(
+                  color: AppColors.mintAccent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: const Text(
+                'Creates a real folder on your device',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
               onTap: _createNew,
             ),
             const Divider(color: Colors.white24, height: 1),
@@ -133,8 +142,10 @@ class _AlbumPickerSheetState extends State<AlbumPickerSheet> {
             else if (targets.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 28),
-                child: Text('No other folders on this device',
-                    style: TextStyle(color: Colors.white38, fontSize: 13)),
+                child: Text(
+                  'No other folders on this device',
+                  style: TextStyle(color: Colors.white38, fontSize: 13),
+                ),
               )
             else
               Flexible(
@@ -144,12 +155,18 @@ class _AlbumPickerSheetState extends State<AlbumPickerSheet> {
                   itemBuilder: (context, i) {
                     final p = targets[i];
                     return ListTile(
-                      leading: const Icon(Icons.folder_outlined,
-                          color: Colors.white70),
-                      title: Text(p.name,
-                          style: const TextStyle(color: Colors.white)),
+                      leading: const Icon(
+                        Icons.folder_outlined,
+                        color: Colors.white70,
+                      ),
+                      title: Text(
+                        p.name,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                       onTap: () => Navigator.pop(
-                          context, AlbumTarget.existing(p, p.name)),
+                        context,
+                        AlbumTarget.existing(p, p.name),
+                      ),
                     );
                   },
                 ),

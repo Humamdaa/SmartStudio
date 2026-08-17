@@ -31,7 +31,7 @@ class _AssetPickerScreenState extends State<AssetPickerScreen> {
       onlyAll: true,
       filterOption: FilterOptionGroup(
         orders: [
-          const OrderOption(type: OrderOptionType.createDate, asc: false)
+          const OrderOption(type: OrderOptionType.createDate, asc: false),
         ],
       ),
     );
@@ -56,8 +56,10 @@ class _AssetPickerScreenState extends State<AssetPickerScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.navyDeep,
         foregroundColor: Colors.white,
-        title: Text(widget.title,
-            style: const TextStyle(fontSize: 16, color: Colors.white)),
+        title: Text(
+          widget.title,
+          style: const TextStyle(fontSize: 16, color: Colors.white),
+        ),
         actions: [
           if (_selected.isNotEmpty)
             TextButton(
@@ -65,66 +67,79 @@ class _AssetPickerScreenState extends State<AssetPickerScreen> {
                 context,
                 _assets.where((a) => _selected.contains(a.id)).toList(),
               ),
-              child: Text('Move ${_selected.length}',
-                  style: const TextStyle(
-                      color: AppColors.mintAccent,
-                      fontWeight: FontWeight.w700)),
+              child: Text(
+                'Move ${_selected.length}',
+                style: const TextStyle(
+                  color: AppColors.mintAccent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
         ],
       ),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.navyDeep))
+              child: CircularProgressIndicator(color: AppColors.navyDeep),
+            )
           : _assets.isEmpty
-              ? const Center(
-                  child: Text('No photos found',
-                      style: TextStyle(color: AppColors.textSecondary)))
-              : GridView.builder(
-                  padding: const EdgeInsets.all(2),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 2,
-                    crossAxisSpacing: 2,
-                  ),
-                  itemCount: _assets.length,
-                  itemBuilder: (_, i) {
-                    final asset = _assets[i];
-                    final sel = _selected.contains(asset.id);
-                    return GestureDetector(
-                      onTap: () => setState(() {
-                        sel
-                            ? _selected.remove(asset.id)
-                            : _selected.add(asset.id);
-                      }),
-                      child: Stack(fit: StackFit.expand, children: [
-                        Image(
-                          image: AssetEntityImageProvider(
-                            asset,
-                            isOriginal: false,
-                            thumbnailSize: const ThumbnailSize.square(200),
-                          ),
-                          fit: BoxFit.cover,
+          ? const Center(
+              child: Text(
+                'No photos found',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            )
+          : GridView.builder(
+              padding: const EdgeInsets.all(2),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 2,
+                crossAxisSpacing: 2,
+              ),
+              itemCount: _assets.length,
+              itemBuilder: (_, i) {
+                final asset = _assets[i];
+                final sel = _selected.contains(asset.id);
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    sel ? _selected.remove(asset.id) : _selected.add(asset.id);
+                  }),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image(
+                        image: AssetEntityImageProvider(
+                          asset,
+                          isOriginal: false,
+                          thumbnailSize: const ThumbnailSize.square(200),
                         ),
-                        if (sel)
-                          Container(
-                            color: AppColors.navyDeep.withValues(alpha: 0.5),
-                            child: const Center(
-                              child: Icon(Icons.check_circle_rounded,
-                                  color: AppColors.mintAccent, size: 30),
+                        fit: BoxFit.cover,
+                      ),
+                      if (sel)
+                        Container(
+                          color: AppColors.navyDeep.withValues(alpha: 0.5),
+                          child: const Center(
+                            child: Icon(
+                              Icons.check_circle_rounded,
+                              color: AppColors.mintAccent,
+                              size: 30,
                             ),
                           ),
-                        if (asset.type == AssetType.video)
-                          const Positioned(
-                            bottom: 4,
-                            right: 4,
-                            child: Icon(Icons.play_arrow_rounded,
-                                color: Colors.white, size: 16),
+                        ),
+                      if (asset.type == AssetType.video)
+                        const Positioned(
+                          bottom: 4,
+                          right: 4,
+                          child: Icon(
+                            Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 16,
                           ),
-                      ]),
-                    );
-                  },
-                ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
     );
   }
 }

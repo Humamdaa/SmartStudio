@@ -18,7 +18,7 @@ import '../../services/secure_storage_service.dart';
 // ── Providers ─────────────────────────────────────────────────
 
 final secureRepoProvider = Provider<SecureRepo>(
-      (ref) => SecureRepo(ref.read(objectBoxProvider)),
+  (ref) => SecureRepo(ref.read(objectBoxProvider)),
 );
 
 // هل المجلد مفتوح؟
@@ -26,12 +26,11 @@ final _unlockedProvider = StateProvider<bool>((_) => false);
 
 // قائمة الملفات المحمية
 final _secureFilesProvider =
-StateNotifierProvider<_SecureNotifier, AsyncValue<List<SecureFile>>>(
+    StateNotifierProvider<_SecureNotifier, AsyncValue<List<SecureFile>>>(
       (ref) => _SecureNotifier(ref.read(secureRepoProvider), ref),
-);
+    );
 
-class _SecureNotifier
-    extends StateNotifier<AsyncValue<List<SecureFile>>> {
+class _SecureNotifier extends StateNotifier<AsyncValue<List<SecureFile>>> {
   final SecureRepo _repo;
   final Ref _ref;
   _SecureNotifier(this._repo, this._ref) : super(const AsyncValue.loading()) {
@@ -183,7 +182,10 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
 
   // ── Biometric ────────────────────────────────────────────────
   Future<void> _biometric() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final ok = await _auth.authenticate(
         localizedReason: 'Open Secure Folder',
@@ -208,7 +210,10 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
   Future<void> _onDigit(String d) async {
     if (_entered.length >= 6) return;
     final pin = _entered + d;
-    setState(() { _entered = pin; _error = null; });
+    setState(() {
+      _entered = pin;
+      _error = null;
+    });
     if (pin.length < 6) return;
 
     setState(() => _loading = true);
@@ -290,9 +295,7 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.navyDeep,
-      body: SafeArea(
-        child: _showPin ? _buildPin() : _buildChoose(),
-      ),
+      body: SafeArea(child: _showPin ? _buildPin() : _buildChoose()),
     );
   }
 
@@ -303,22 +306,35 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 88, height: 88,
+            width: 88,
+            height: 88,
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.lock_outline_rounded,
-                color: Colors.white, size: 44),
+            child: const Icon(
+              Icons.lock_outline_rounded,
+              color: Colors.white,
+              size: 44,
+            ),
           ),
           const SizedBox(height: 24),
-          const Text('Secure Folder',
-              style: TextStyle(color: Colors.white, fontSize: 26,
-                  fontWeight: FontWeight.w700)),
+          const Text(
+            'Secure Folder',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text('Your hidden private files',
-              style: TextStyle(
-                  color: Colors.white.withOpacity(0.5), fontSize: 14)),
+          Text(
+            'Your hidden private files',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.5),
+              fontSize: 14,
+            ),
+          ),
           const SizedBox(height: 56),
           _AuthBtn(
             icon: Icons.fingerprint_rounded,
@@ -338,9 +354,10 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 20),
-            Text(_error!,
-                style: const TextStyle(
-                    color: AppColors.errorRed, fontSize: 13)),
+            Text(
+              _error!,
+              style: const TextStyle(color: AppColors.errorRed, fontSize: 13),
+            ),
           ],
         ],
       ),
@@ -368,10 +385,13 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
           _pinExists
               ? 'Enter PIN'
               : _firstEntry == null
-                  ? 'Create a 6-digit PIN'
-                  : 'Confirm your PIN',
-          style: const TextStyle(color: Colors.white, fontSize: 20,
-              fontWeight: FontWeight.w600),
+              ? 'Create a 6-digit PIN'
+              : 'Confirm your PIN',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 32),
         // نقاط
@@ -381,7 +401,8 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
             final filled = i < _entered.length;
             return Container(
               margin: const EdgeInsets.symmetric(horizontal: 10),
-              width: 16, height: 16,
+              width: 16,
+              height: 16,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: filled
@@ -398,9 +419,10 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
         ),
         if (_error != null) ...[
           const SizedBox(height: 16),
-          Text(_error!,
-              style: const TextStyle(
-                  color: AppColors.errorRed, fontSize: 13)),
+          Text(
+            _error!,
+            style: const TextStyle(color: AppColors.errorRed, fontSize: 13),
+          ),
         ],
         const SizedBox(height: 40),
         if (_loading)
@@ -416,8 +438,10 @@ class _AuthGateState extends ConsumerState<_AuthGate> {
         if (_pinExists && !_loading)
           TextButton(
             onPressed: _resetPin,
-            child: const Text('نسيت الرقم؟',
-                style: TextStyle(color: AppColors.mintAccent)),
+            child: const Text(
+              'نسيت الرقم؟',
+              style: TextStyle(color: AppColors.mintAccent),
+            ),
           ),
       ],
     );
@@ -440,7 +464,8 @@ class _VaultViewState extends ConsumerState<_VaultView> {
     super.initState();
     // نضمن قائمة محدّثة من القرص كل مرة يفتح فيها المجلد الآمن
     WidgetsBinding.instance.addPostFrameCallback(
-        (_) => ref.read(_secureFilesProvider.notifier).load());
+      (_) => ref.read(_secureFilesProvider.notifier).load(),
+    );
   }
 
   @override
@@ -460,32 +485,42 @@ class _VaultViewState extends ConsumerState<_VaultView> {
           data: (files) => Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Secure Folder',
-                  style: TextStyle(color: Colors.white, fontSize: 16,
-                      fontWeight: FontWeight.w700)),
-              Text('${files.length} hidden files',
-                  style: const TextStyle(
-                      color: Colors.white60, fontSize: 11)),
+              const Text(
+                'Secure Folder',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                '${files.length} hidden files',
+                style: const TextStyle(color: Colors.white60, fontSize: 11),
+              ),
             ],
           ),
-          loading: () => const Text('Secure Folder',
-              style: TextStyle(color: Colors.white)),
-          error: (_, __) => const Text('Secure Folder',
-              style: TextStyle(color: Colors.white)),
+          loading: () => const Text(
+            'Secure Folder',
+            style: TextStyle(color: Colors.white),
+          ),
+          error: (_, __) => const Text(
+            'Secure Folder',
+            style: TextStyle(color: Colors.white),
+          ),
         ),
         actions: [
           // زر قفل
           IconButton(
-            icon: const Icon(Icons.lock_rounded,
-                color: AppColors.mintAccent),
+            icon: const Icon(Icons.lock_rounded, color: AppColors.mintAccent),
             tooltip: 'Lock folder',
-            onPressed: () =>
-            ref.read(_unlockedProvider.notifier).state = false,
+            onPressed: () => ref.read(_unlockedProvider.notifier).state = false,
           ),
           // زر إضافة
           IconButton(
-            icon: const Icon(Icons.add_photo_alternate_outlined,
-                color: Colors.white),
+            icon: const Icon(
+              Icons.add_photo_alternate_outlined,
+              color: Colors.white,
+            ),
             tooltip: 'Add from gallery',
             onPressed: () => _showPicker(context, notifier),
           ),
@@ -493,9 +528,11 @@ class _VaultViewState extends ConsumerState<_VaultView> {
       ),
       body: asyncFiles.when(
         loading: () => const Center(
-            child: CircularProgressIndicator(color: AppColors.mintAccent)),
+          child: CircularProgressIndicator(color: AppColors.mintAccent),
+        ),
         error: (e, _) => Center(
-            child: Text('$e', style: const TextStyle(color: Colors.white70))),
+          child: Text('$e', style: const TextStyle(color: Colors.white70)),
+        ),
         data: (files) => files.isEmpty
             ? _buildEmpty(context, notifier)
             : _buildGrid(context, ref, files, notifier),
@@ -503,47 +540,62 @@ class _VaultViewState extends ConsumerState<_VaultView> {
     );
   }
 
-  Widget _buildEmpty(
-      BuildContext context, _SecureNotifier notifier) => Center(
+  Widget _buildEmpty(BuildContext context, _SecureNotifier notifier) => Center(
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.lock_open_outlined,
-            size: 72, color: Colors.white.withOpacity(0.22)),
+        Icon(
+          Icons.lock_open_outlined,
+          size: 72,
+          color: Colors.white.withOpacity(0.22),
+        ),
         const SizedBox(height: 20),
-        const Text('No hidden files',
-            style: TextStyle(fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.white)),
+        const Text(
+          'No hidden files',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
         const SizedBox(height: 8),
         Text(
           'Files you add here will be removed\nfrom your gallery permanently.',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13,
-              color: Colors.white.withOpacity(0.55), height: 1.5),
+          style: TextStyle(
+            fontSize: 13,
+            color: Colors.white.withOpacity(0.55),
+            height: 1.5,
+          ),
         ),
         const SizedBox(height: 32),
         ElevatedButton.icon(
           onPressed: () => _showPicker(context, notifier),
           icon: const Icon(Icons.add, color: AppColors.navyDeep),
-          label: const Text('Add Files',
-              style: TextStyle(
-                  color: AppColors.navyDeep, fontWeight: FontWeight.w700)),
+          label: const Text(
+            'Add Files',
+            style: TextStyle(
+              color: AppColors.navyDeep,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.mintAccent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14))),
+            backgroundColor: AppColors.mintAccent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
         ),
       ],
     ),
   );
 
   Widget _buildGrid(
-      BuildContext context,
-      WidgetRef ref,
-      List<SecureFile> files,
-      _SecureNotifier notifier,
-      ) {
+    BuildContext context,
+    WidgetRef ref,
+    List<SecureFile> files,
+    _SecureNotifier notifier,
+  ) {
     return GridView.builder(
       padding: const EdgeInsets.all(10),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -559,43 +611,53 @@ class _VaultViewState extends ConsumerState<_VaultView> {
           onLongPress: () => _showOptions(context, file, notifier),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: Stack(fit: StackFit.expand, children: [
-              // الـ thumbnail الفيزيائي (الصورة اتحذفت من photo_manager)
-              file.thumbnailPath != null
-                  ? Image.file(
-                      File(file.thumbnailPath!),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _filePlaceholder(file),
-                    )
-                  : _filePlaceholder(file),
-              Positioned(
-                top: 5,
-                left: 5,
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: AppColors.navyDeep.withOpacity(0.85),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.lock_rounded,
-                      color: AppColors.mintAccent, size: 11),
-                ),
-              ),
-              if (file.isVideo)
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // الـ thumbnail الفيزيائي (الصورة اتحذفت من photo_manager)
+                file.thumbnailPath != null
+                    ? Image.file(
+                        File(file.thumbnailPath!),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _filePlaceholder(file),
+                      )
+                    : _filePlaceholder(file),
                 Positioned(
-                  bottom: 5,
-                  right: 5,
+                  top: 5,
+                  left: 5,
                   child: Container(
-                    padding: const EdgeInsets.all(3),
+                    width: 20,
+                    height: 20,
                     decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(4)),
-                    child: const Icon(Icons.play_arrow_rounded,
-                        color: Colors.white, size: 13),
+                      color: AppColors.navyDeep.withOpacity(0.85),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_rounded,
+                      color: AppColors.mintAccent,
+                      size: 11,
+                    ),
                   ),
                 ),
-            ]),
+                if (file.isVideo)
+                  Positioned(
+                    bottom: 5,
+                    right: 5,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 13,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -614,8 +676,7 @@ class _VaultViewState extends ConsumerState<_VaultView> {
   );
 
   // ── فتح ملف في detail screen ─────────────────────────────────
-  void _openFile(
-      BuildContext context, SecureFile file, List<SecureFile> all) {
+  void _openFile(BuildContext context, SecureFile file, List<SecureFile> all) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -626,32 +687,43 @@ class _VaultViewState extends ConsumerState<_VaultView> {
 
   // ── خيارات long press ─────────────────────────────────────────
   void _showOptions(
-      BuildContext context, SecureFile file, _SecureNotifier notifier) {
+    BuildContext context,
+    SecureFile file,
+    _SecureNotifier notifier,
+  ) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1C2B3A),
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2)),
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
             ListTile(
-              leading: const Icon(Icons.lock_open_outlined,
-                  color: Colors.white70),
-              title: const Text('Restore to Gallery',
-                  style: TextStyle(color: Colors.white)),
+              leading: const Icon(
+                Icons.lock_open_outlined,
+                color: Colors.white70,
+              ),
+              title: const Text(
+                'Restore to Gallery',
+                style: TextStyle(color: Colors.white),
+              ),
               subtitle: const Text(
-                  'File will reappear in your gallery',
-                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+                'File will reappear in your gallery',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
               onTap: () async {
                 Navigator.pop(context);
                 // restoreFile يرجّع النتيجة الحقيقية — قبل كان الكود
@@ -663,22 +735,30 @@ class _VaultViewState extends ConsumerState<_VaultView> {
                   ok = false;
                 }
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(ok
-                        ? 'Restored to gallery'
-                        : 'Failed to restore'),
-                    backgroundColor: ok ? null : AppColors.errorRed,
-                  ));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        ok ? 'Restored to gallery' : 'Failed to restore',
+                      ),
+                      backgroundColor: ok ? null : AppColors.errorRed,
+                    ),
+                  );
                 }
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete_forever_outlined,
-                  color: AppColors.errorRed),
-              title: const Text('Delete permanently',
-                  style: TextStyle(color: AppColors.errorRed)),
-              subtitle: const Text('Cannot be recovered',
-                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              leading: const Icon(
+                Icons.delete_forever_outlined,
+                color: AppColors.errorRed,
+              ),
+              title: const Text(
+                'Delete permanently',
+                style: TextStyle(color: AppColors.errorRed),
+              ),
+              subtitle: const Text(
+                'Cannot be recovered',
+                style: TextStyle(color: Colors.white38, fontSize: 12),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _confirmDelete(context, file, notifier);
@@ -690,25 +770,32 @@ class _VaultViewState extends ConsumerState<_VaultView> {
     );
   }
 
-  void _confirmDelete(BuildContext context, SecureFile file,
-      _SecureNotifier notifier) {
+  void _confirmDelete(
+    BuildContext context,
+    SecureFile file,
+    _SecureNotifier notifier,
+  ) {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('Delete permanently?'),
         content: const Text(
-            'This file will be deleted forever and cannot be recovered.'),
+          'This file will be deleted forever and cannot be recovered.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(dialogCtx);
               notifier.deleteFile(file);
             },
-            child: const Text('Delete',
-                style: TextStyle(color: AppColors.errorRed)),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.errorRed),
+            ),
           ),
         ],
       ),
@@ -722,7 +809,8 @@ class _VaultViewState extends ConsumerState<_VaultView> {
       isScrollControlled: true,
       backgroundColor: AppColors.lightBackground,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (_) => _GalleryPicker(
         onConfirm: (assets) async {
           // دفعة وحدة: نسخ الكل ثم حذف الكل من المعرض بطلب واحد
@@ -733,10 +821,12 @@ class _VaultViewState extends ConsumerState<_VaultView> {
           final message = failed == 0
               ? '$succeeded file(s) moved to Secure Folder'
               : '$succeeded moved, $failed failed';
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(message),
-            backgroundColor: failed == 0 ? null : AppColors.errorRed,
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: failed == 0 ? null : AppColors.errorRed,
+            ),
+          );
         },
       ),
     );
@@ -753,8 +843,7 @@ class _SecureDetailScreen extends StatefulWidget {
   final SecureFile file;
   final List<SecureFile> allFiles;
 
-  const _SecureDetailScreen(
-      {required this.file, required this.allFiles});
+  const _SecureDetailScreen({required this.file, required this.allFiles});
 
   @override
   State<_SecureDetailScreen> createState() => _SecureDetailScreenState();
@@ -797,23 +886,25 @@ class _SecureDetailScreenState extends State<_SecureDetailScreen> {
       extendBodyBehindAppBar: true,
       appBar: _uiVisible
           ? AppBar(
-        backgroundColor: Colors.black.withOpacity(0.55),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(current.originalName,
-                style: const TextStyle(
-                    fontSize: 14, color: Colors.white),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            Text('${_idx + 1} / ${widget.allFiles.length}',
-                style: const TextStyle(
-                    fontSize: 11, color: Colors.white54)),
-          ],
-        ),
-      )
+              backgroundColor: Colors.black.withOpacity(0.55),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    current.originalName,
+                    style: const TextStyle(fontSize: 14, color: Colors.white),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${_idx + 1} / ${widget.allFiles.length}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  ),
+                ],
+              ),
+            )
           : null,
       body: PageView.builder(
         controller: _pageCtrl,
@@ -832,8 +923,10 @@ class _SecureDetailScreenState extends State<_SecureDetailScreen> {
                   File(f.securePath),
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.white38, size: 48),
+                    Icons.broken_image_outlined,
+                    color: Colors.white38,
+                    size: 48,
+                  ),
                 ),
               ),
             ),
@@ -890,7 +983,9 @@ class _GalleryPickerState extends State<_GalleryPicker> {
       onlyAll: true,
       // الأحدث أول
       filterOption: FilterOptionGroup(
-        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+        orders: [
+          const OrderOption(type: OrderOptionType.createDate, asc: false),
+        ],
       ),
     );
     if (albums.isEmpty) {
@@ -929,47 +1024,57 @@ class _GalleryPickerState extends State<_GalleryPicker> {
           // Header
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Select files to hide',
-                        style: TextStyle(fontSize: 16,
-                            fontWeight: FontWeight.w600)),
-                    Text(
-                      _selected.isEmpty
-                          ? 'Tap photos to select'
-                          : '${_selected.length} selected',
-                      style: const TextStyle(
-                          fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ],
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Select files to hide',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        _selected.isEmpty
+                            ? 'Tap photos to select'
+                            : '${_selected.length} selected',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              // Stays on screen while nothing is selected: hiding it made the
-              // sheet look like it had no way to confirm at all.
-              ElevatedButton(
-                onPressed: _selected.isEmpty
-                    ? null
-                    : () {
-                        final selected = _assets
-                            .where((a) => _selected.contains(a.id))
-                            .toList();
-                        Navigator.pop(context);
-                        widget.onConfirm(selected);
-                      },
-                style: ElevatedButton.styleFrom(
+                const SizedBox(width: 12),
+                // Stays on screen while nothing is selected: hiding it made the
+                // sheet look like it had no way to confirm at all.
+                ElevatedButton(
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () {
+                          final selected = _assets
+                              .where((a) => _selected.contains(a.id))
+                              .toList();
+                          Navigator.pop(context);
+                          widget.onConfirm(selected);
+                        },
+                  style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.navyDeep,
                     minimumSize: const Size(0, 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 18)),
-                child: Text(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                  ),
+                  child: Text(
                     _selected.isEmpty ? 'Add' : 'Add ${_selected.length}',
-                    style: const TextStyle(color: Colors.white)),
-              ),
-            ]),
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
           ),
           // تحذير
           Container(
@@ -978,86 +1083,98 @@ class _GalleryPickerState extends State<_GalleryPicker> {
             decoration: BoxDecoration(
               color: AppColors.errorRed.withOpacity(0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: AppColors.errorRed.withOpacity(0.2)),
+              border: Border.all(color: AppColors.errorRed.withOpacity(0.2)),
             ),
-            child: const Row(children: [
-              Icon(Icons.warning_amber_rounded,
-                  color: AppColors.errorRed, size: 16),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Selected files will be removed from your gallery and hidden.',
-                  style: TextStyle(
-                      color: AppColors.errorRed, fontSize: 12),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: AppColors.errorRed,
+                  size: 16,
                 ),
-              ),
-            ]),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Selected files will be removed from your gallery and hidden.',
+                    style: TextStyle(color: AppColors.errorRed, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
           ),
           const Divider(height: 1),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(
-                color: AppColors.navyDeep))
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.navyDeep),
+                  )
                 : GridView.builder(
-              controller: _scrollCtrl,
-              padding: const EdgeInsets.all(2),
-              gridDelegate:
-              const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisSpacing: 2,
-                crossAxisSpacing: 2,
-              ),
-              itemCount: _assets.length,
-              itemBuilder: (_, i) {
-                final asset = _assets[i];
-                final sel = _selected.contains(asset.id);
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    sel
-                        ? _selected.remove(asset.id)
-                        : _selected.add(asset.id);
-                  }),
-                  child: Stack(fit: StackFit.expand, children: [
-                    // A cached provider rather than a per-build thumbnail
-                    // future: every selection tap rebuilds the grid, and the
-                    // old FutureBuilder refetched each visible thumbnail on
-                    // each rebuild, so tapping looked like it did nothing.
-                    Image(
-                      image: AssetEntityImageProvider(
-                        asset,
-                        isOriginal: false,
-                        thumbnailSize: const ThumbnailSize.square(200),
-                      ),
-                      fit: BoxFit.cover,
-                    ),
-                    if (sel)
-                      Container(
-                        color: AppColors.navyDeep.withOpacity(0.5),
-                        child: const Center(
-                          child: Icon(Icons.check_circle_rounded,
-                              color: AppColors.mintAccent,
-                              size: 32),
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.all(2),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 2,
+                          crossAxisSpacing: 2,
                         ),
-                      ),
-                    if (asset.type == AssetType.video)
-                      Positioned(
-                        bottom: 4, right: 4,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius:
-                              BorderRadius.circular(3)),
-                          child: const Icon(
-                              Icons.play_arrow_rounded,
-                              color: Colors.white, size: 12),
+                    itemCount: _assets.length,
+                    itemBuilder: (_, i) {
+                      final asset = _assets[i];
+                      final sel = _selected.contains(asset.id);
+                      return GestureDetector(
+                        onTap: () => setState(() {
+                          sel
+                              ? _selected.remove(asset.id)
+                              : _selected.add(asset.id);
+                        }),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // A cached provider rather than a per-build thumbnail
+                            // future: every selection tap rebuilds the grid, and the
+                            // old FutureBuilder refetched each visible thumbnail on
+                            // each rebuild, so tapping looked like it did nothing.
+                            Image(
+                              image: AssetEntityImageProvider(
+                                asset,
+                                isOriginal: false,
+                                thumbnailSize: const ThumbnailSize.square(200),
+                              ),
+                              fit: BoxFit.cover,
+                            ),
+                            if (sel)
+                              Container(
+                                color: AppColors.navyDeep.withOpacity(0.5),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.check_circle_rounded,
+                                    color: AppColors.mintAccent,
+                                    size: 32,
+                                  ),
+                                ),
+                              ),
+                            if (asset.type == AssetType.video)
+                              Positioned(
+                                bottom: 4,
+                                right: 4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: const Icon(
+                                    Icons.play_arrow_rounded,
+                                    color: Colors.white,
+                                    size: 12,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
-                  ]),
-                );
-              },
-            ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -1075,27 +1192,39 @@ class _AuthBtn extends StatelessWidget {
   final bool loading;
 
   const _AuthBtn({
-    required this.icon, required this.label,
-    required this.bg, required this.fg,
-    required this.onTap, this.loading = false,
+    required this.icon,
+    required this.label,
+    required this.bg,
+    required this.fg,
+    required this.onTap,
+    this.loading = false,
   });
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: double.infinity, height: 52,
+    width: double.infinity,
+    height: 52,
     child: ElevatedButton.icon(
       onPressed: loading ? null : onTap,
       icon: loading
-          ? const SizedBox(width: 20, height: 20,
-          child: CircularProgressIndicator(
-              strokeWidth: 2, color: Colors.black45))
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.black45,
+              ),
+            )
           : Icon(icon, color: fg),
-      label: Text(label,
-          style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
+      label: Text(
+        label,
+        style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+      ),
       style: ElevatedButton.styleFrom(
         backgroundColor: bg,
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSizes.radiusMd)),
+          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        ),
       ),
     ),
   );
@@ -1109,39 +1238,52 @@ class _PinPad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const rows = [
-      ['1','2','3'],
-      ['4','5','6'],
-      ['7','8','9'],
-      ['','0','⌫'],
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+      ['7', '8', '9'],
+      ['', '0', '⌫'],
     ];
     return Column(
-      children: rows.map((row) => Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: row.map((d) {
-            if (d.isEmpty) return const SizedBox(width: 72, height: 72);
-            return GestureDetector(
-              onTap: () => d == '⌫' ? onDelete() : onDigit(d),
-              child: Container(
-                width: 72, height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.1),
-                ),
-                child: Center(
-                  child: d == '⌫'
-                      ? const Icon(Icons.backspace_outlined,
-                      color: Colors.white, size: 22)
-                      : Text(d,
-                      style: const TextStyle(color: Colors.white,
-                          fontSize: 24, fontWeight: FontWeight.w400)),
-                ),
+      children: rows
+          .map(
+            (row) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: row.map((d) {
+                  if (d.isEmpty) return const SizedBox(width: 72, height: 72);
+                  return GestureDetector(
+                    onTap: () => d == '⌫' ? onDelete() : onDigit(d),
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.1),
+                      ),
+                      child: Center(
+                        child: d == '⌫'
+                            ? const Icon(
+                                Icons.backspace_outlined,
+                                color: Colors.white,
+                                size: 22,
+                              )
+                            : Text(
+                                d,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
-            );
-          }).toList(),
-        ),
-      )).toList(),
+            ),
+          )
+          .toList(),
     );
   }
 }

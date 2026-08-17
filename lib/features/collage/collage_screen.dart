@@ -63,8 +63,10 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
     _load();
     // نختار تخطيط يناسب عدد الصور تلقائياً
     final n = widget.assets.length;
-    _layout = _layouts.firstWhere((l) => l.capacity >= n,
-        orElse: () => _layouts.last);
+    _layout = _layouts.firstWhere(
+      (l) => l.capacity >= n,
+      orElse: () => _layouts.last,
+    );
   }
 
   @override
@@ -95,8 +97,7 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
-  Size get _outputSize =>
-      Size(_cell * _layout.cols, _cell * _layout.rows);
+  Size get _outputSize => Size(_cell * _layout.cols, _cell * _layout.rows);
 
   Future<void> _save() async {
     if (_images.isEmpty || _saving) return;
@@ -115,8 +116,10 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
         bg: _bg,
       );
       final picture = recorder.endRecording();
-      final rendered =
-          await picture.toImage(out.width.round(), out.height.round());
+      final rendered = await picture.toImage(
+        out.width.round(),
+        out.height.round(),
+      );
       picture.dispose();
 
       final data = await rendered.toByteData(format: ui.ImageByteFormat.png);
@@ -125,7 +128,8 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
 
       await PhotoManager.editor.saveImage(
         data.buffer.asUint8List(),
-        filename: 'PixMind_collage_${DateTime.now().millisecondsSinceEpoch}.png',
+        filename:
+            'PixMind_collage_${DateTime.now().millisecondsSinceEpoch}.png',
         title: 'PixMind collage',
       );
 
@@ -150,8 +154,9 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light
-          .copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+      ),
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
@@ -166,7 +171,9 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppColors.mintAccent),
+                        strokeWidth: 2,
+                        color: AppColors.mintAccent,
+                      ),
                     ),
                   )
                 : Padding(
@@ -177,47 +184,53 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
                         backgroundColor: AppColors.mintAccent,
                         foregroundColor: Colors.black,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20)),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                       ),
-                      child: const Text('Save',
-                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      child: const Text(
+                        'Save',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
           ],
         ),
         body: _loading
             ? const Center(
-                child: CircularProgressIndicator(color: AppColors.mintAccent))
+                child: CircularProgressIndicator(color: AppColors.mintAccent),
+              )
             : _images.isEmpty
-                ? const Center(
-                    child: Text('Could not open the selected photos',
-                        style: TextStyle(color: Colors.white54)))
-                : Column(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Center(
-                            child: AspectRatio(
-                              aspectRatio:
-                                  _outputSize.width / _outputSize.height,
-                              child: CustomPaint(
-                                painter: _CollagePainter(
-                                  images: _images,
-                                  layout: _layout,
-                                  gap: _gap,
-                                  radius: _radius,
-                                  bg: _bg,
-                                  outputSize: _outputSize,
-                                ),
-                              ),
+            ? const Center(
+                child: Text(
+                  'Could not open the selected photos',
+                  style: TextStyle(color: Colors.white54),
+                ),
+              )
+            : Column(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Center(
+                        child: AspectRatio(
+                          aspectRatio: _outputSize.width / _outputSize.height,
+                          child: CustomPaint(
+                            painter: _CollagePainter(
+                              images: _images,
+                              layout: _layout,
+                              gap: _gap,
+                              radius: _radius,
+                              bg: _bg,
+                              outputSize: _outputSize,
                             ),
                           ),
                         ),
                       ),
-                      _buildPanel(),
-                    ],
+                    ),
                   ),
+                  _buildPanel(),
+                ],
+              ),
       ),
     );
   }
@@ -250,12 +263,14 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
                             : Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(19),
                       ),
-                      child: Text(l.label,
-                          style: TextStyle(
-                            color: active ? Colors.black : Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          )),
+                      child: Text(
+                        l.label,
+                        style: TextStyle(
+                          color: active ? Colors.black : Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                 );
@@ -264,40 +279,50 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
           ),
           _slider('Gap', _gap, 0, 40, (v) => setState(() => _gap = v)),
           _slider(
-              'Corners', _radius, 0, 60, (v) => setState(() => _radius = v)),
+            'Corners',
+            _radius,
+            0,
+            60,
+            (v) => setState(() => _radius = v),
+          ),
           // لون الخلفية
           SizedBox(
             height: 34,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              children: const [
-                Colors.white,
-                Colors.black,
-                Color(0xFF1A3A5C),
-                Color(0xFF0FDFAF),
-                Color(0xFFFFCC00),
-                Color(0xFFFF3B30),
-              ].map((c) {
-                final active = c == _bg;
-                return GestureDetector(
-                  onTap: () => setState(() => _bg = c),
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    margin:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: c,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: active ? AppColors.mintAccent : Colors.white24,
-                        width: active ? 3 : 1,
+              children:
+                  const [
+                    Colors.white,
+                    Colors.black,
+                    Color(0xFF1A3A5C),
+                    Color(0xFF0FDFAF),
+                    Color(0xFFFFCC00),
+                    Color(0xFFFF3B30),
+                  ].map((c) {
+                    final active = c == _bg;
+                    return GestureDetector(
+                      onTap: () => setState(() => _bg = c),
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: active
+                                ? AppColors.mintAccent
+                                : Colors.white24,
+                            width: active ? 3 : 1,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              }).toList(),
+                    );
+                  }).toList(),
             ),
           ),
         ],
@@ -305,38 +330,43 @@ class _CollageScreenState extends ConsumerState<CollageScreen> {
     );
   }
 
-  Widget _slider(String label, double value, double min, double max,
-          ValueChanged<double> onChanged) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 62,
-              child: Text(label,
-                  style:
-                      const TextStyle(color: Colors.white70, fontSize: 12)),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 2,
-                  activeTrackColor: AppColors.mintAccent,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: AppColors.mintAccent,
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 7),
-                ),
-                child: Slider(
-                    value: value.clamp(min, max),
-                    min: min,
-                    max: max,
-                    onChanged: onChanged),
-              ),
-            ),
-          ],
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 62,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
         ),
-      );
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 2,
+              activeTrackColor: AppColors.mintAccent,
+              inactiveTrackColor: Colors.white24,
+              thumbColor: AppColors.mintAccent,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            ),
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// يرسم الكولاج — تُستخدم للمعاينة وللتصدير بنفس المنطق.
@@ -365,8 +395,7 @@ void _paintCollage({
     );
 
     canvas.save();
-    canvas.clipRRect(
-        RRect.fromRectAndRadius(rect, Radius.circular(radius)));
+    canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
 
     // نملأ الخانة مع الحفاظ على نسبة الصورة (cover)
     final img = images[i];
@@ -375,11 +404,7 @@ void _paintCollage({
     final scale = math.max(rect.width / iw, rect.height / ih);
     final dw = iw * scale;
     final dh = ih * scale;
-    final dst = Rect.fromCenter(
-      center: rect.center,
-      width: dw,
-      height: dh,
-    );
+    final dst = Rect.fromCenter(center: rect.center, width: dw, height: dh);
     canvas.drawImageRect(
       img,
       Rect.fromLTWH(0, 0, iw, ih),

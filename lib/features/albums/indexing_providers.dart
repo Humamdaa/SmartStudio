@@ -49,5 +49,6 @@ class AutoIndexStarter {
   }
 }
 
-final autoIndexStarterProvider =
-    Provider<AutoIndexStarter>((ref) => AutoIndexStarter(ref));
+final autoIndexStarterProvider = Provider<AutoIndexStarter>(
+  (ref) => AutoIndexStarter(ref),
+);

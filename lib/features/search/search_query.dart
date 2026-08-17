@@ -1,15 +1,7 @@
 import 'search_scope.dart';
 import 'search_vocabulary.dart';
 
-enum SearchField {
-  general,
-  people,
-  ocr,
-  objects,
-  colors,
-  scenes,
-  date,
-}
+enum SearchField { general, people, ocr, objects, colors, scenes, date }
 
 class SearchClause {
   final SearchField field;
@@ -119,10 +111,7 @@ class SearchQueryParser {
       if (unique.add(key)) deduped.add(clause);
     }
 
-    return ParsedSearchQuery(
-      clauses: deduped,
-      hasTypedFilters: hasTyped,
-    );
+    return ParsedSearchQuery(clauses: deduped, hasTypedFilters: hasTyped);
   }
 
   static void _appendValue(
@@ -137,11 +126,9 @@ class SearchQueryParser {
     if (exactPhrase) {
       final normalized = SearchVocabulary.normalize(raw);
       if (normalized.isNotEmpty) {
-        clauses.add(SearchClause(
-          field: field,
-          value: normalized,
-          exactPhrase: true,
-        ));
+        clauses.add(
+          SearchClause(field: field, value: normalized, exactPhrase: true),
+        );
       }
       return;
     }

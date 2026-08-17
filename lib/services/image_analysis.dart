@@ -116,11 +116,13 @@ double computeBlurRatio(List<List<double>> gray, {int blocks = 4}) {
       final values = <double>[];
       for (var y = by * step + 1; y < (by + 1) * step - 1; y++) {
         for (var x = bx * step + 1; x < (bx + 1) * step - 1; x++) {
-          values.add(4 * gray[y][x] -
-              gray[y - 1][x] -
-              gray[y + 1][x] -
-              gray[y][x - 1] -
-              gray[y][x + 1]);
+          values.add(
+            4 * gray[y][x] -
+                gray[y - 1][x] -
+                gray[y + 1][x] -
+                gray[y][x - 1] -
+                gray[y][x + 1],
+          );
         }
       }
       if (values.isEmpty) continue;
@@ -128,7 +130,7 @@ double computeBlurRatio(List<List<double>> gray, {int blocks = 4}) {
       final mean = values.reduce((a, b) => a + b) / values.length;
       final variance =
           values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
-              values.length;
+          values.length;
 
       counted++;
       // عتبة منخفضة = المربّع شبه خالي من الحواف → مموّه
@@ -230,8 +232,9 @@ List<List<String>> groupDuplicates(Map<String, dynamic> input) {
 
     if (members.length > 1) {
       // الأعلى جودة أولًا — هي المرشّحة للاحتفاظ
-      members.sort((a, b) =>
-          (items[b][2] as num).compareTo(items[a][2] as num));
+      members.sort(
+        (a, b) => (items[b][2] as num).compareTo(items[a][2] as num),
+      );
       groups.add(members.map((k) => items[k][0] as String).toList());
     }
   }
@@ -319,7 +322,8 @@ double computeSharpness(List<List<double>> gray) {
   // نواة لابلاسي: مركز 4 وجيرانه -1
   for (var y = 1; y < h - 1; y++) {
     for (var x = 1; x < w - 1; x++) {
-      final lap = 4 * gray[y][x] -
+      final lap =
+          4 * gray[y][x] -
           gray[y - 1][x] -
           gray[y + 1][x] -
           gray[y][x - 1] -
@@ -332,7 +336,7 @@ double computeSharpness(List<List<double>> gray) {
   final mean = values.reduce((a, b) => a + b) / values.length;
   final variance =
       values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
-          values.length;
+      values.length;
   return variance;
 }
 
@@ -357,16 +361,20 @@ double computeQualityScore({
   double blurRatio = 0,
 }) {
   // الحدّة: تطبيع لوغاريتمي لأن مدى التباين واسع جدًا
-  final sharpNorm =
-      (math.log(1 + sharpness) / math.log(1 + 2000)).clamp(0.0, 1.0);
+  final sharpNorm = (math.log(1 + sharpness) / math.log(1 + 2000)).clamp(
+    0.0,
+    1.0,
+  );
 
   // الإضاءة: أفضل شي 0.5، وكل ما بعدنا عنها تنزل الدرجة
   final brightScore = (1 - (brightness - 0.5).abs() * 2).clamp(0.0, 1.0);
 
   // الدقّة: صورة أكبر عادة أفضل — بس بتأثير بسيط
   final pixels = width * height;
-  final resNorm =
-      (math.log(1 + pixels) / math.log(1 + 12000000)).clamp(0.0, 1.0);
+  final resNorm = (math.log(1 + pixels) / math.log(1 + 12000000)).clamp(
+    0.0,
+    1.0,
+  );
 
   final base = sharpNorm * 0.55 + brightScore * 0.30 + resNorm * 0.15;
 
@@ -413,10 +421,8 @@ List<List<double>> _dct2d(List<List<double>> input) {
   // نحضّر جدول معاملات جيب التمام مرة وحدة (أسرع بكثير)
   final cosTable = List.generate(
     n,
-    (u) => List.generate(
-      n,
-      (x) => math.cos((2 * x + 1) * u * math.pi / (2 * n)),
-    ),
+    (u) =>
+        List.generate(n, (x) => math.cos((2 * x + 1) * u * math.pi / (2 * n))),
   );
 
   double alpha(int u) => u == 0 ? math.sqrt(1 / n) : math.sqrt(2 / n);
@@ -444,8 +450,7 @@ List<List<double>> _dct2d(List<List<double>> input) {
   });
 }
 
-int _argb(int r, int g, int b) =>
-    0xFF000000 | (r << 16) | (g << 8) | b;
+int _argb(int r, int g, int b) => 0xFF000000 | (r << 16) | (g << 8) | b;
 
 /// ARGB → [hue 0..360, sat 0..1, val 0..1]
 List<double> _toHsv(int argb) {
