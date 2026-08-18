@@ -211,22 +211,61 @@ bool areDuplicates(int hashA, int hashB, {int threshold = 10}) =>
 List<List<String>> groupDuplicates(Map<String, dynamic> input) {
   final threshold = input['threshold'] as int;
   final items = (input['items'] as List).cast<List>();
+  final n = items.length;
+  if (n < 2) return [];
+
+  final hashes = List<int>.generate(n, (i) => items[i][1] as int);
+
+  // ── تقسيم نطاقات (banded LSH) بدل مقارنة الكل بالكل ──────────
+  //
+  // المسح التربيعي القديم كان يقارن كل صورة بكل ما بعدها: مع 85 ألف صورة
+  // يعني 3.6 مليار مقارنة — لا ينتهي عمليًا.
+  //
+  // نقسم البصمة 64-بت إلى (threshold + 1) نطاقًا متجاورًا. أي بصمتين
+  // تختلفان بـ threshold بت أو أقل لا بد أن تتطابقا تمامًا في نطاق واحد
+  // على الأقل (مبدأ الحمام: البتات المختلفة أقل من عدد النطاقات، فلا
+  // يمكن أن تلمس كل النطاقات). فمسح رفقاء النطاق فقط يجد **نفس** الأزواج
+  // التي كان يجدها المسح الكامل، بلا أي خسارة في النتائج.
+  final bandCount = (threshold + 1).clamp(1, 64);
+  final bandStarts = <int>[];
+  final bandMasks = <int>[];
+  var bit = 0;
+  for (var b = 0; b < bandCount; b++) {
+    final width = (64 - bit) ~/ (bandCount - b);
+    bandStarts.add(bit);
+    bandMasks.add(width >= 64 ? -1 : (1 << width) - 1);
+    bit += width;
+  }
+
+  final buckets = List.generate(bandCount, (_) => <int, List<int>>{});
+  for (var i = 0; i < n; i++) {
+    final h = hashes[i];
+    for (var b = 0; b < bandCount; b++) {
+      final key = (h >> bandStarts[b]) & bandMasks[b];
+      buckets[b].putIfAbsent(key, () => <int>[]).add(i);
+    }
+  }
 
   final groups = <List<String>>[];
-  final used = <int>{};
+  final used = List<bool>.filled(n, false);
 
-  for (var i = 0; i < items.length; i++) {
-    if (used.contains(i)) continue;
-    final hashI = items[i][1] as int;
+  for (var i = 0; i < n; i++) {
+    if (used[i]) continue;
+    final hashI = hashes[i];
 
     final members = <int>[i];
-    used.add(i);
+    used[i] = true;
 
-    for (var j = i + 1; j < items.length; j++) {
-      if (used.contains(j)) continue;
-      if (areDuplicates(hashI, items[j][1] as int, threshold: threshold)) {
-        members.add(j);
-        used.add(j);
+    final seen = <int>{};
+    for (var b = 0; b < bandCount; b++) {
+      final mates = buckets[b][(hashI >> bandStarts[b]) & bandMasks[b]];
+      if (mates == null) continue;
+      for (final j in mates) {
+        if (j <= i || used[j] || !seen.add(j)) continue;
+        if (areDuplicates(hashI, hashes[j], threshold: threshold)) {
+          members.add(j);
+          used[j] = true;
+        }
       }
     }
 

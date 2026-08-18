@@ -107,7 +107,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       videoPlayerController: player,
       autoPlay: false, // لا يشتغل تلقائي — فقط لما يكون الصفحة الحالية
       looping: false,
-      aspectRatio: item.asset.width / item.asset.height,
+      // MediaStore يعطي أبعاد الفيديو بدون احتساب دوران التسجيل، فمقطع عمودي
+      // مخزّن 1920x1080 كان يُعرض مضغوطًا. المشغّل بعد initialize يعطي النسبة
+      // الحقيقية للعرض والدوران مطبّق عليها.
+      aspectRatio: player.value.aspectRatio,
       materialProgressColors: ChewieProgressColors(
         playedColor: AppColors.mintAccent,
         handleColor: AppColors.mintAccent,
@@ -628,7 +631,7 @@ class _VideoPage extends StatelessWidget {
       onTap: onTap,
       child: Center(
         child: AspectRatio(
-          aspectRatio: item.asset.width / item.asset.height,
+          aspectRatio: videoState!.player.value.aspectRatio,
           child: Chewie(controller: videoState!.chewie!),
         ),
       ),

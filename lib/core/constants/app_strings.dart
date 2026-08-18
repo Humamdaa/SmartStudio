@@ -41,8 +41,6 @@ class AppStrings {
   static const String noResults = 'No results found';
   static const String tryDifferent =
       'Try different keywords or change search type';
-  static const String generalSearch = 'General';
-  static const String preciseSearch = 'Precise';
   static const String searchText = 'Text';
   static const String searchImage = 'Image';
   static const String searchColor = 'Color';
