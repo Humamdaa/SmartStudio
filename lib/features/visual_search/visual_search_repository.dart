@@ -32,6 +32,23 @@ final class VisualSearchRepository {
 
   final DatabaseHelper _database;
 
+  Future<List<SimilarImageResult>> findSimilarByEmbedding({
+    required Float32List queryEmbedding,
+    int limit = 60,
+    int pageSize = 250,
+  }) async {
+    final results = await findSimilarImages(
+      // Text queries have no source AssetEntity to exclude.
+      // This value can never be a real photo_manager asset id.
+      queryAssetId: '__pixmind_text_query__',
+      queryEmbedding: queryEmbedding,
+      topCount: limit,
+      pageSize: pageSize,
+    );
+
+    return results.topMatches;
+  }
+
   Future<void> saveEmbedding({
     required String assetId,
     required Float32List embedding,

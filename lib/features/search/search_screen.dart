@@ -17,6 +17,8 @@ import '../../services/smart_search_bridge.dart';
 import '../albums/indexing_providers.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
+import '../visual_search/visual_search_repository.dart';
+import 'text_embedding_api.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // Smart Search — teammate UI + stable v2.1.1 offline search engine.
@@ -77,6 +79,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   // ── نتائج البحث: text/OCR من v2.1.1، واللون من ObjectBox ─────
   final _smart = SmartSearchBridge();
+  final _textEmbeddingApi = TextEmbeddingApi();
+  final _visualSearchRepository = VisualSearchRepository();
+
+  int _semanticSearchRequest = 0;
   List<MediaItem> _results = [];
   bool _searching = false;
   Timer? _searchDebounce;
@@ -97,14 +103,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _initSpeech();
   }
 
-Future<void> _submitTopSearch(String value) async {
-  if (_method == SearchMethod.voice) {
-    await _runSemanticTextSearch(value);
-    return;
-  }
+  Future<void> _submitTopSearch(String value) async {
+    if (_method == SearchMethod.voice) {
+      await _runSemanticTextSearch(value);
+      return;
+    }
 
-  await _runIndexedSearch();
-}
+    await _runIndexedSearch();
+  }
 
   Future<void> _initSpeech() async {
     try {
@@ -244,24 +250,129 @@ Future<void> _submitTopSearch(String value) async {
     return parts.where((part) => part.isNotEmpty).join(' ');
   }
 
- void _onQueryChanged(String value) {
-  _searchDebounce?.cancel();
+  void _onQueryChanged(String value) {
+    _searchDebounce?.cancel();
 
-  if (_method == SearchMethod.voice) {
+    if (_method == SearchMethod.voice) {
+      _searchDebounce = Timer(
+        const Duration(milliseconds: 700),
+        () => _runSemanticTextSearch(value),
+      );
+      return;
+    }
+
+    if (!_supportsIndexedText(_method)) return;
+
     _searchDebounce = Timer(
-      const Duration(milliseconds: 700),
-      () => _runSemanticTextSearch(value),
+      const Duration(milliseconds: 320),
+      _runIndexedSearch,
     );
-    return;
   }
 
-  if (!_supportsIndexedText(_method)) return;
+  Future<void> _runSemanticTextSearch(String rawText) async {
+    final text = rawText.trim();
 
-  _searchDebounce = Timer(
-    const Duration(milliseconds: 320),
-    _runIndexedSearch,
-  );
-}
+    final requestId = ++_semanticSearchRequest;
+
+    if (text.isEmpty) {
+      if (!mounted) return;
+
+      setState(() {
+        _results = [];
+        _searching = false;
+        _searchStatus = 'Type or speak a description to search photos.';
+      });
+
+      return;
+    }
+
+    if (_scope == SearchScope.videos) {
+      if (!mounted) return;
+
+      setState(() {
+        _results = [];
+        _searching = false;
+        _searchStatus =
+            'Semantic embedding search currently works with indexed photos.';
+      });
+
+      return;
+    }
+
+    setState(() {
+      _searching = true;
+      _searchStatus = 'Creating text embedding…';
+    });
+
+    try {
+      // Laptop:
+      // text -> USE v4 -> text_projection -> normalized 256-D vector
+      final textEmbedding = await _textEmbeddingApi.embed(text);
+
+      if (!mounted ||
+          requestId != _semanticSearchRequest ||
+          _method != SearchMethod.voice) {
+        return;
+      }
+
+      setState(() {
+        _searchStatus = 'Comparing with indexed photos…';
+      });
+
+      // Phone:
+      // 256-D text vector vs stored 256-D image vectors.
+      final matches = await _visualSearchRepository.findSimilarByEmbedding(
+        queryEmbedding: textEmbedding,
+        limit: 60,
+      );
+
+      if (!mounted ||
+          requestId != _semanticSearchRequest ||
+          _method != SearchMethod.voice) {
+        return;
+      }
+
+      final assets = await Future.wait(
+        matches.map((match) => AssetEntity.fromId(match.assetId)),
+      );
+
+      if (!mounted ||
+          requestId != _semanticSearchRequest ||
+          _method != SearchMethod.voice) {
+        return;
+      }
+
+      final items = <MediaItem>[];
+
+      for (final asset in assets) {
+        if (asset != null) {
+          items.add(MediaItem.fromAsset(asset));
+        }
+      }
+
+      setState(() {
+        _results = items;
+        _searching = false;
+
+        if (items.isEmpty) {
+          _searchStatus = 'No visual embeddings are available for this search.';
+        } else {
+          _searchStatus =
+              '${items.length} semantic photo match${items.length == 1 ? '' : 'es'}';
+        }
+      });
+    } catch (error) {
+      if (!mounted || requestId != _semanticSearchRequest) {
+        return;
+      }
+
+      setState(() {
+        _results = [];
+        _searching = false;
+        _searchStatus = 'Semantic search error: $error';
+      });
+    }
+  }
 
   Future<void> _commitCurrentAs(SearchMethod method) async {
     final value = _controller.text.trim();
@@ -299,7 +410,7 @@ Future<void> _submitTopSearch(String value) async {
     final svc = ref.read(indexingServiceProvider);
     final maxDistance = _mode == SearchMode.general ? 0.32 : 0.14;
     return svc
-        .searchByColor(color.value, maxDistance: maxDistance)
+        .searchByColor(color.toARGB32(), maxDistance: maxDistance)
         .map((row) => row.assetId)
         .toSet();
   }
@@ -315,7 +426,7 @@ Future<void> _submitTopSearch(String value) async {
 
   String? _aiColorLabel(Color? color) {
     if (color == null) return null;
-    final value = color.value;
+    final value = color.toARGB32();
     const labels = <int, String>{
       0xFFE24B4A: 'red',
       0xFFFF9500: 'orange-color',
@@ -562,8 +673,11 @@ Future<void> _submitTopSearch(String value) async {
   Future<void> _retryFailedAi() async {
     await _smart.retryFailed();
     await _refreshAiStats();
-    if (mounted)
-      setState(() => _aiStatus = 'Failed photos returned to the queue.');
+    if (mounted) {
+      setState(() {
+        _aiStatus = 'Failed photos returned to the queue.';
+      });
+    }
   }
 
   /// البحث باللون — بيقرأ من الألوان السائدة المفهرسة مسبقًا،
@@ -608,6 +722,7 @@ Future<void> _submitTopSearch(String value) async {
     _timer?.cancel();
     _searchDebounce?.cancel();
     _speech.cancel();
+    _textEmbeddingApi.close();
     _controller.dispose();
     _transcript.dispose();
     super.dispose();
@@ -1234,6 +1349,23 @@ Future<void> _submitTopSearch(String value) async {
                         color: AppColors.navyDeep,
                         width: 1.4,
                       ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _searching
+                        ? null
+                        : () => _runSemanticTextSearch(_transcript.text),
+                    icon: const Icon(Icons.image_search_rounded),
+                    label: const Text('Search photos with this text'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.navyDeep,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
