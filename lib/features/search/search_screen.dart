@@ -957,53 +957,53 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
 
               // ── Scope ────────────────────────────────────────
-              const IosSectionHeader('Search in'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: IosSegmented<SearchScope>(
-                  value: _scope,
-                  segments: const {
-                    SearchScope.photos: 'Photos',
-                    SearchScope.videos: 'Videos',
-                    SearchScope.all: 'All',
-                  },
-                  onChanged: (scope) {
-                    setState(() => _scope = scope);
-                    _runIndexedSearch();
-                  },
-                ),
-              ),
+              // const IosSectionHeader('Search in'),
+              // Padding(
+              //   padding: const EdgeInsets.symmetric(horizontal: 16),
+              //   child: IosSegmented<SearchScope>(
+              //     value: _scope,
+              //     segments: const {
+              //       SearchScope.photos: 'Photos',
+              //       SearchScope.videos: 'Videos',
+              //       SearchScope.all: 'All',
+              //     },
+              //     onChanged: (scope) {
+              //       setState(() => _scope = scope);
+              //       _runIndexedSearch();
+              //     },
+              //   ),
+              // ),
 
-              // ── Mode ─────────────────────────────────────────
-              const IosSectionHeader('Search mode'),
-              IosCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    IosSegmented<SearchMode>(
-                      value: _mode,
-                      segments: const {
-                        SearchMode.general: 'General',
-                        SearchMode.precise: 'Precise',
-                      },
-                      onChanged: (mode) {
-                        setState(() => _mode = mode);
-                        _runIndexedSearch();
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _mode == SearchMode.general
-                          ? 'Broader results — includes near matches'
-                          : 'Narrow, more detailed results',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // // ── Mode ─────────────────────────────────────────
+              // const IosSectionHeader('Search mode'),
+              // IosCard(
+              //   child: Column(
+              //     crossAxisAlignment: CrossAxisAlignment.start,
+              //     children: [
+              //       IosSegmented<SearchMode>(
+              //         value: _mode,
+              //         segments: const {
+              //           SearchMode.general: 'General',
+              //           SearchMode.precise: 'Precise',
+              //         },
+              //         onChanged: (mode) {
+              //           setState(() => _mode = mode);
+              //           _runIndexedSearch();
+              //         },
+              //       ),
+              //       const SizedBox(height: 10),
+              //       Text(
+              //         _mode == SearchMode.general
+              //             ? 'Broader results — includes near matches'
+              //             : 'Narrow, more detailed results',
+              //         style: const TextStyle(
+              //           color: AppColors.textSecondary,
+              //           fontSize: 12.5,
+              //         ),
+              //       ),
+              //     ],
+              //   ),
+              // ),
 
               if (_method == SearchMethod.color) _buildColorPicker(),
               if (_method == SearchMethod.image) _buildImagePicker(),
