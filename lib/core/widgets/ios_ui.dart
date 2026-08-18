@@ -344,8 +344,14 @@ class IosSearchField extends StatelessWidget {
               controller: controller,
               onChanged: onChanged,
               onSubmitted: onSubmitted,
-              style: const TextStyle(fontSize: 15.5),
-              decoration: InputDecoration(
+ style: const TextStyle(
+    color: AppColors.textPrimary,
+    fontSize: 15.5,
+    fontWeight: FontWeight.w500,
+  ),
+
+  cursorColor: AppColors.navyDeep,
+  textInputAction: TextInputAction.search,              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 hintText: hint,

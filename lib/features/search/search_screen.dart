@@ -895,8 +895,45 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   hint: _hintForMethod,
                   listening: _voice == VoiceState.recording,
                   onMic: _toggleRecording,
-                  onChanged: _onQueryChanged,
-                  onSubmitted: _submitTopSearch,
+
+                  onChanged: (value) {
+                    if (_method == SearchMethod.voice) {
+                      _searchDebounce?.cancel();
+
+                      final text = value.trim();
+
+                      if (text.isEmpty) {
+                        setState(() {
+                          _results = [];
+                          _searching = false;
+                          _searchStatus =
+                              'Type or speak a description to search photos.';
+                        });
+                        return;
+                      }
+
+                      _searchDebounce = Timer(
+                        const Duration(milliseconds: 700),
+                        () {
+                          _runSemanticTextSearch(text);
+                        },
+                      );
+
+                      return;
+                    }
+
+                    _onQueryChanged(value);
+                  },
+
+                  onSubmitted: (value) async {
+                    if (_method == SearchMethod.voice) {
+                      _searchDebounce?.cancel();
+                      await _runSemanticTextSearch(value);
+                      return;
+                    }
+
+                    await _runIndexedSearch();
+                  },
                 ),
               ),
 
@@ -1018,7 +1055,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       SearchMethod.scenes: (Icons.landscape_outlined, 'Scene'),
       SearchMethod.date: (Icons.calendar_month_outlined, 'Date'),
       SearchMethod.color: (Icons.palette_outlined, 'Color'),
-      SearchMethod.image: (Icons.image_outlined, 'Image'),
       SearchMethod.voice: (Icons.mic_none_rounded, 'Voice'),
     };
 
@@ -1041,6 +1077,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 return;
               }
               setState(() => _method = e.key);
+
+              if (e.key == SearchMethod.voice) {
+                final text = _controller.text.trim();
+
+                if (text.isNotEmpty) {
+                  await _runSemanticTextSearch(text);
+                }
+
+                return;
+              }
+
               if (e.key == SearchMethod.color && _pickedColor != null) {
                 await _runIndexedSearch();
               }
