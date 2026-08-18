@@ -8,7 +8,14 @@ import '../../core/constants/app_colors.dart';
 /// مرتّبة من الأحدث للأقدم.
 class AssetPickerScreen extends StatefulWidget {
   final String title;
-  const AssetPickerScreen({super.key, required this.title});
+
+  /// Verb on the confirm button. The picker is not only used for moving.
+  final String confirmLabel;
+  const AssetPickerScreen({
+    super.key,
+    required this.title,
+    this.confirmLabel = 'Move',
+  });
 
   @override
   State<AssetPickerScreen> createState() => _AssetPickerScreenState();
@@ -68,7 +75,7 @@ class _AssetPickerScreenState extends State<AssetPickerScreen> {
                 _assets.where((a) => _selected.contains(a.id)).toList(),
               ),
               child: Text(
-                'Move ${_selected.length}',
+                '${widget.confirmLabel} ${_selected.length}',
                 style: const TextStyle(
                   color: AppColors.mintAccent,
                   fontWeight: FontWeight.w700,

@@ -47,8 +47,18 @@ class IndexingService {
 
   /// حجم الدفعة — موازنة بين سرعة الفهرسة وسلاسة الواجهة.
   /// أصغر = توقّفات أقصر على الخيط الرئيسي = واجهة أنعم.
-  static const _batchSize = 12;
+  /// نداء Isolate واحد لكل دفعة، وإنشاء الـ Isolate أغلى من التحليل نفسه —
+  /// فدفعة أكبر تعني إنشاءات أقل. 24 هي القيمة المقصودة أصلًا بحسب الملاحظة
+  /// في أعلى الملف؛ كانت انزلقت إلى 12.
+  static const _batchSize = 24;
   static const _thumbSize = 128;
+
+  /// كم صورة نقرأ من المعرض في كل صفحة. الترقيم يجعل التحليل يبدأ بعد
+  /// جزء من الثانية بدل انتظار جلب المكتبة كاملة.
+  ///
+  /// لمّا تكون المكتبة محلّلة بالكامل يبقى المشي ضروريًا لكشف الصور الجديدة،
+  /// فصفحات أكبر تعني نداءات منصّة أقل: 85 ألف صورة = ~171 نداء بدل ~426.
+  static const _pageSize = 500;
 
   Box<MediaAnalysis> get _box => _store.analysisBox;
 
@@ -82,80 +92,95 @@ class IndexingService {
     );
     if (albums.isEmpty) return;
 
-    final total = await albums.first.assetCountAsync;
-    final count = limit != null && limit < total ? limit : total;
-    final assets = await albums.first.getAssetListRange(start: 0, end: count);
+    final album = albums.first;
+    final total = await album.assetCountAsync;
+    final cap = limit != null && limit < total ? limit : total;
+    if (cap <= 0) return;
 
-    // ننظّف صفوف الصور اللي انحذفت من الجهاز — بدونها بيضل
-    // العدّاد يحسبها وبتضل تظهر بنتائج المكرّرات.
-    _pruneDeleted(assets.map((a) => a.id).toSet());
-
+    // استعلام خاصية واحد — أرخص بكثير من جلب الصفوف كاملة.
     final already = _indexedIds();
-    final pending = assets.where((a) => !already.contains(a.id)).toList();
 
-    if (pending.isEmpty) {
-      progress.value = IndexProgress(done: 0, total: 0, running: false);
-      return;
+    progress.value = IndexProgress(done: 0, total: cap, running: true);
+
+    // ── المشي على المكتبة صفحة صفحة ──────────────────────────────
+    //
+    // النسخة السابقة كانت تجلب كائنات كل صور المكتبة (85 ألفًا وأكثر) وتمسح
+    // صندوق ObjectBox كاملًا **قبل** تحليل صورة واحدة، وتعيد ذلك في كل فتح
+    // للتطبيق. فالجلسة القصيرة كانت تنفق وقتها كله في هذه المقدّمة ولا يكاد
+    // شيء يُفهرس — 32 صورة من 85,115 بعد جلسات كثيرة.
+    //
+    // بالترقيم يبدأ التحليل الفعلي بعد جزء من الثانية، وكل جلسة تُضيف صورًا
+    // حقيقية بدل إعادة نفس المقدّمة.
+    final liveIds = <String>{};
+    final pending = <AssetEntity>[];
+    var scanned = 0;
+    var page = 0;
+
+    while (scanned < cap && !_cancelled) {
+      final pageAssets = await album.getAssetListPaged(
+        page: page,
+        size: _pageSize,
+      );
+      if (pageAssets.isEmpty) break;
+      page++;
+
+      for (final asset in pageAssets) {
+        if (scanned >= cap) break;
+        scanned++;
+        liveIds.add(asset.id);
+        if (!already.contains(asset.id)) pending.add(asset);
+      }
+
+      while (pending.length >= _batchSize && !_cancelled) {
+        await _analyzeBatch(pending.take(_batchSize).toList());
+        pending.removeRange(0, _batchSize);
+
+        progress.value = IndexProgress(done: scanned, total: cap, running: true);
+
+        // نترك الواجهة تلتقط أنفاسها بين الدفعات. بالخلفية منمدّد الاستراحة
+        // أكثر حتى ما نزاحم المستخدم.
+        await Future<void>.delayed(
+          background ? const Duration(milliseconds: 120) : Duration.zero,
+        );
+      }
+
+      progress.value = IndexProgress(done: scanned, total: cap, running: true);
     }
 
-    progress.value = IndexProgress(
-      done: 0,
-      total: pending.length,
-      running: true,
-    );
+    // آخر دفعة ناقصة.
+    if (!_cancelled && pending.isNotEmpty) {
+      await _analyzeBatch(pending);
+    }
 
-    var done = 0;
-    for (var i = 0; i < pending.length; i += _batchSize) {
+    // ننظّف صفوف الصور اللي انحذفت من الجهاز — بدونها بيضل العدّاد يحسبها
+    // وبتضل تظهر بنتائج المكرّرات. صار بعد المشي لا قبله، ولمّا نكون فعلًا
+    // شفنا المكتبة كاملة — وإلا منحذف صفوفًا لصور خارج نطاق المسح.
+    if (!_cancelled && limit == null && scanned >= total) {
+      _pruneDeleted(liveIds);
+    }
+
+    progress.value = IndexProgress(done: scanned, total: cap, running: false);
+  }
+
+  /// مصغّرات الدفعة على الخيط الرئيسي (نداءات منصّة)، ثم التحليل الثقيل في
+  /// Isolate واحد، ثم كتابة واحدة للدفعة كاملة.
+  Future<void> _analyzeBatch(List<AssetEntity> batch) async {
+    final jobs = <String, Uint8List>{};
+    for (final asset in batch) {
       if (_cancelled) break;
-
-      final end = math.min(i + _batchSize, pending.length);
-      final batch = pending.sublist(i, end);
-
-      // 1) نجمع الصور المصغّرة (نداءات منصّة — لازم بالخيط الرئيسي)
-      final jobs = <String, Uint8List>{};
-      final byId = <String, AssetEntity>{};
-      for (final asset in batch) {
-        if (_cancelled) break;
-        try {
-          final bytes = await asset.thumbnailDataWithSize(
-            const ThumbnailSize.square(_thumbSize),
-          );
-          if (bytes != null) {
-            jobs[asset.id] = bytes;
-            byId[asset.id] = asset;
-          }
-        } catch (_) {
-          // صورة تالفة — نتجاهلها
-        }
+      try {
+        final bytes = await asset.thumbnailDataWithSize(
+          const ThumbnailSize.square(_thumbSize),
+        );
+        if (bytes != null) jobs[asset.id] = bytes;
+      } catch (_) {
+        // صورة تالفة — نتجاهلها
       }
-
-      if (jobs.isNotEmpty) {
-        // 2) التحليل الثقيل — Isolate واحد للدفعة كاملة
-        final results = await compute(analyzeBatch, jobs);
-
-        // 3) الحفظ بمعاملة وحدة (أسرع بكثير من put لكل صف)
-        _saveBatch(results);
-      }
-
-      done = end;
-      progress.value = IndexProgress(
-        done: done,
-        total: pending.length,
-        running: true,
-      );
-
-      // 4) نترك الواجهة تلتقط أنفاسها بين الدفعات.
-      //    بالخلفية منمدّد الاستراحة أكثر حتى ما نزاحم المستخدم.
-      await Future<void>.delayed(
-        background ? const Duration(milliseconds: 120) : Duration.zero,
-      );
     }
+    if (jobs.isEmpty) return;
 
-    progress.value = IndexProgress(
-      done: done,
-      total: pending.length,
-      running: false,
-    );
+    final results = await compute(analyzeBatch, jobs);
+    _saveBatch(results);
   }
 
   /// حفظ دفعة النتائج.

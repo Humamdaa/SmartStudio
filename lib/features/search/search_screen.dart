@@ -14,6 +14,7 @@ import '../../data/models/index_dashboard_stats.dart';
 import '../../data/models/media_item.dart';
 import '../../data/prefs/app_prefs.dart';
 import '../../services/smart_search_bridge.dart';
+import '../albums/asset_picker_screen.dart';
 import '../albums/indexing_providers.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -1230,14 +1231,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const IosSectionHeader('Search by image'),
-        const IosCard(
-          child: DottedPlaceholder(
-            icon: Icons.add_photo_alternate_outlined,
-            label: 'Image similarity UI prototype — model not connected yet',
+        IosCard(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _pickImageToSearch,
+            child: const DottedPlaceholder(
+              icon: Icons.add_photo_alternate_outlined,
+              label: 'Pick a photo to find visually similar ones',
+            ),
           ),
         ),
       ],
     );
+  }
+
+  /// Hands the chosen photo to the visual search screen, which already runs
+  /// the on-device embedding comparison. This panel was a dead placeholder
+  /// even though that engine works from the photo detail screen.
+  Future<void> _pickImageToSearch() async {
+    final picked = await Navigator.of(context).push<List<AssetEntity>>(
+      MaterialPageRoute(
+        builder: (_) => const AssetPickerScreen(
+          title: 'Pick a photo to search',
+          confirmLabel: 'Search',
+        ),
+      ),
+    );
+    if (!mounted || picked == null || picked.isEmpty) return;
+    if (!context.mounted) return;
+    context.push(AppRoutes.visualSearch, extra: picked.first.id);
   }
 
   // ═════════════════════════════════════════════════════════════
