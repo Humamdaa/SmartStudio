@@ -13,9 +13,11 @@ import '../../core/widgets/ios_ui.dart';
 import '../../data/models/index_dashboard_stats.dart';
 import '../../data/models/media_item.dart';
 import '../../data/prefs/app_prefs.dart';
+import '../../data/repositories/media_repository.dart';
 import '../../services/smart_search_bridge.dart';
-import '../albums/asset_picker_screen.dart';
 import '../albums/indexing_providers.dart';
+import '../visual_search/visual_embedding_service.dart';
+import '../visual_search/visual_search_indexer.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import '../visual_search/visual_search_repository.dart';
@@ -29,7 +31,7 @@ import 'text_embedding_api.dart';
 //
 // Text/OCR/object/person/scene/date use the merged local SQLite AI index.
 // Color keeps the teammate ObjectBox color-distance index and can now be
-// intersected with the typed AI filters. Image and voice remain UI prototypes.
+// intersected with typed AI filters. Image similarity stays on-device; natural-language descriptions use the FastAPI text-embedding service, while speech is only an input method.
 // ═══════════════════════════════════════════════════════════════
 
 enum SearchMethod {
@@ -44,7 +46,6 @@ enum SearchMethod {
   voice,
 }
 
-enum SearchMode { general, precise }
 
 /// Language of the query itself (speech locale + text matching).
 enum QueryLang { arabic, english }
@@ -72,7 +73,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _transcript = TextEditingController();
 
   SearchMethod _method = SearchMethod.text;
-  SearchMode _mode = SearchMode.general;
   QueryLang _lang = QueryLang.arabic;
   SearchScope _scope = SearchScope.all;
   Color? _pickedColor;
@@ -97,9 +97,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String _aiStatus = 'Offline AI index is ready.';
   double? _aiProgress;
 
+
+  final _mediaRepository = MediaRepository();
+  final _visualEmbeddingService = VisualEmbeddingService();
+  late final VisualSearchIndexer _visualIndexer;
+  int _visualIndexedCount = 0;
+  int _visualTotalImages = 0;
+  bool _visualIndexing = false;
+  bool _cancelVisualIndex = false;
+  VisualIndexProgress? _visualProgress;
+  String _visualStatus = 'Visual index is ready.';
+
   @override
   void initState() {
     super.initState();
+    _visualIndexer = VisualSearchIndexer(
+      embeddingService: _visualEmbeddingService,
+      repository: _visualSearchRepository,
+      mediaRepository: _mediaRepository,
+    );
     _loadSmartState();
     _initSpeech();
   }
@@ -183,6 +199,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final background = await AppPrefs.instance.backgroundIndexingEnabled;
     final arabic = await AppPrefs.instance.arabicOcrEnabled;
     await _refreshAiStats();
+    await _refreshVisualStats();
     if (!mounted) return;
     setState(() {
       _backgroundEnabled = background;
@@ -198,6 +215,152 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       // Permission screen may still be active during first startup.
     }
   }
+
+  Future<void> _refreshVisualStats() async {
+    try {
+      final indexed = await _visualSearchRepository.countIndexedImages();
+      final total = await _mediaRepository.getTotalCount(RequestType.image);
+      if (!mounted) return;
+      setState(() {
+        _visualIndexedCount = indexed;
+        _visualTotalImages = total;
+      });
+    } catch (_) {
+      // Gallery permission may still be pending during first startup.
+    }
+  }
+
+  Future<void> _indexMissingVisualImages() async {
+    if (_visualIndexing) return;
+    setState(() {
+      _visualIndexing = true;
+      _cancelVisualIndex = false;
+      _visualProgress = null;
+      _visualStatus = 'Preparing the visual index…';
+    });
+    try {
+      final summary = await _visualIndexer.indexAllMissing(
+        shouldCancel: () => _cancelVisualIndex || !mounted,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            _visualProgress = progress;
+            _visualStatus = progress.assetName == null
+                ? 'Indexing visual embeddings…'
+                : 'Indexing visual embeddings…\n${progress.assetName}';
+          });
+        },
+      );
+      await _refreshVisualStats();
+      if (!mounted) return;
+      setState(() {
+        _visualStatus = summary.cancelled
+            ? 'Visual indexing stopped safely.'
+            : 'Visual index updated: ${summary.indexed} new, ${summary.failed} failed.';
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _visualStatus = 'Visual indexing error: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _visualIndexing = false;
+          _visualProgress = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _pickImageForVisualSearch() async {
+    final permission = await PhotoManager.requestPermissionExtend();
+    if (!permission.isAuth) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Photo access is required for image search.')),
+      );
+      return;
+    }
+
+    final assets = await _mediaRepository.loadRecentAssets(
+      type: RequestType.image,
+      limit: 120,
+    );
+    if (!mounted) return;
+    if (assets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No photos are available to search with.')),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<AssetEntity>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return FractionallySizedBox(
+          heightFactor: 0.82,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Choose a photo',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Select a photo to find visually similar images on this device.',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 3,
+                    crossAxisSpacing: 3,
+                  ),
+                  itemCount: assets.length,
+                  itemBuilder: (_, index) {
+                    final asset = assets[index];
+                    return GestureDetector(
+                      onTap: () => Navigator.of(sheetContext).pop(asset),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image(
+                          image: AssetEntityImageProvider(
+                            asset,
+                            isOriginal: false,
+                            thumbnailSize: const ThumbnailSize.square(220),
+                          ),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected != null && mounted) {
+      context.push(AppRoutes.visualSearch, extra: selected.id);
+    }
+  }
+
 
   bool _supportsIndexedText(SearchMethod method) => switch (method) {
     SearchMethod.text ||
@@ -233,7 +396,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (clean.isEmpty) return '';
     final prefix = _prefixFor(method);
     if (prefix == null) {
-      return _mode == SearchMode.precise ? '"$clean"' : clean;
+      // Unqualified text is the local All search. Multi-word input is split
+      // into indexed terms by SearchQueryParser and combined with AND.
+      return clean;
     }
     // Typed clauses are quoted so a value like "Fouad Dalloul" stays one
     // clause instead of being split by the compact query parser.
@@ -367,10 +532,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return;
       }
 
+      final details = error.toString();
+      final serviceUnavailable = details.contains('SocketException') ||
+          details.contains('Connection refused') ||
+          details.contains('Failed host lookup');
+      final timedOut = details.contains('TimeoutException');
+
       setState(() {
         _results = [];
         _searching = false;
-        _searchStatus = 'Semantic search error: $error';
+        _searchStatus = serviceUnavailable
+            ? 'Semantic search service is unavailable. Start the FastAPI service or use the local search filters.'
+            : timedOut
+                ? 'Semantic search service did not respond in time. Try again or use the local search filters.'
+                : 'Semantic search could not complete. Local AI search is still available.';
       });
     }
   }
@@ -409,7 +584,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final color = _pickedColor;
     if (color == null) return const <String>{};
     final svc = ref.read(indexingServiceProvider);
-    final maxDistance = _mode == SearchMode.general ? 0.32 : 0.14;
+    // Keep one stable color tolerance for local color-only search.
+    // Semantic descriptions use the separate Describe/FastAPI path.
+    const maxDistance = 0.32;
     return svc
         .searchByColor(color.toARGB32(), maxDistance: maxDistance)
         .map((row) => row.assetId)
@@ -722,8 +899,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void dispose() {
     _timer?.cancel();
     _searchDebounce?.cancel();
+    _cancelVisualIndex = true;
     _speech.cancel();
     _textEmbeddingApi.close();
+    _visualEmbeddingService.dispose();
     _controller.dispose();
     _transcript.dispose();
     super.dispose();
@@ -873,9 +1052,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark.copyWith(
-        statusBarColor: Colors.transparent,
-      ),
+      value: SystemUiOverlayStyle.dark
+          .copyWith(statusBarColor: Colors.transparent),
       child: Scaffold(
         backgroundColor: kIosGroupedBg,
         body: SafeArea(
@@ -883,12 +1061,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           child: ListView(
             padding: const EdgeInsets.only(bottom: 28),
             children: [
-              const IosLargeTitle(
-                title: 'Smart Search',
-                subtitle:
-                    'Offline multi-filter search • image & voice prototypes',
-              ),
-
+              _buildSearchHeader(),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: IosSearchField(
@@ -896,123 +1069,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   hint: _hintForMethod,
                   listening: _voice == VoiceState.recording,
                   onMic: _toggleRecording,
-
-                  onChanged: (value) {
-                    if (_method == SearchMethod.voice) {
-                      _searchDebounce?.cancel();
-
-                      final text = value.trim();
-
-                      if (text.isEmpty) {
-                        setState(() {
-                          _results = [];
-                          _searching = false;
-                          _searchStatus =
-                              'Type or speak a description to search photos.';
-                        });
-                        return;
-                      }
-
-                      _searchDebounce = Timer(
-                        const Duration(milliseconds: 700),
-                        () {
-                          _runSemanticTextSearch(text);
-                        },
-                      );
-
-                      return;
-                    }
-
-                    _onQueryChanged(value);
-                  },
-
+                  onChanged: _onQueryChanged,
                   onSubmitted: (value) async {
                     if (_method == SearchMethod.voice) {
                       _searchDebounce?.cancel();
                       await _runSemanticTextSearch(value);
-                      return;
+                    } else {
+                      await _runIndexedSearch();
                     }
-
-                    await _runIndexedSearch();
                   },
                 ),
               ),
-
-              const IosSectionHeader('Add current term as'),
+              const IosSectionHeader('Search by'),
               _buildMethodRow(),
               if (_filters.isNotEmpty || _pickedColor != null)
                 _buildActiveFilters(),
-
-              // ── Query language (NOT the app language) ────────
-              const IosSectionHeader('Query language'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: IosSegmented<QueryLang>(
-                  value: _lang,
-                  segments: const {
-                    QueryLang.arabic: 'العربية',
-                    QueryLang.english: 'English',
-                  },
-                  onChanged: (l) => setState(() => _lang = l),
-                ),
-              ),
-
-              // ── Scope ────────────────────────────────────────
-              const IosSectionHeader('Search in'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: IosSegmented<SearchScope>(
-                  value: _scope,
-                  segments: const {
-                    SearchScope.photos: 'Photos',
-                    SearchScope.videos: 'Videos',
-                    SearchScope.all: 'All',
-                  },
-                  onChanged: (scope) {
-                    setState(() => _scope = scope);
-                    _runIndexedSearch();
-                  },
-                ),
-              ),
-
-              // ── Mode ─────────────────────────────────────────
-              const IosSectionHeader('Search mode'),
-              IosCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    IosSegmented<SearchMode>(
-                      value: _mode,
-                      segments: const {
-                        SearchMode.general: 'General',
-                        SearchMode.precise: 'Precise',
-                      },
-                      onChanged: (mode) {
-                        setState(() => _mode = mode);
-                        _runIndexedSearch();
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _mode == SearchMode.general
-                          ? 'Broader results — includes near matches'
-                          : 'Narrow, more detailed results',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
+              _buildQueryOptionsSummary(),
               if (_method == SearchMethod.color) _buildColorPicker(),
-              if (_method == SearchMethod.image) _buildImagePicker(),
               if (_method == SearchMethod.voice) _buildVoicePanel(),
-
-              const IosSectionHeader('Offline AI index'),
-              _buildAiIndexCard(),
-
               IosSectionHeader(
                 _results.isEmpty ? 'Results' : 'Results (${_results.length})',
               ),
@@ -1021,6 +1095,209 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSearchHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 92,
+            child: TextButton.icon(
+              onPressed: () => context.go(AppRoutes.home),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 15),
+              label: const Text('Photos'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.navyDeep,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              ),
+            ),
+          ),
+          const Expanded(
+            child: Column(
+              children: [
+                Text(
+                  'Smart Search',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Local AI + semantic search',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 92,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: 'Search & indexing settings',
+                onPressed: _showSearchSettings,
+                icon: const Icon(Icons.settings_outlined),
+                color: AppColors.navyDeep,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String get _scopeLabel => switch (_scope) {
+        SearchScope.photos => 'Photos',
+        SearchScope.videos => 'Videos',
+        SearchScope.all => 'All media',
+      };
+
+  Widget _buildQueryOptionsSummary() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _showQueryOptions,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: kIosSeparator),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.tune_rounded,
+                  size: 18,
+                  color: AppColors.navyDeep,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    '$_langLabel  •  $_scopeLabel',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showQueryOptions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kIosGroupedBg,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            void refresh() => setSheetState(() {});
+            return SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Search options',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Query language',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    IosSegmented<QueryLang>(
+                      value: _lang,
+                      segments: const {
+                        QueryLang.arabic: 'العربية',
+                        QueryLang.english: 'English',
+                      },
+                      onChanged: (value) {
+                        setState(() => _lang = value);
+                        refresh();
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Search in',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    IosSegmented<SearchScope>(
+                      value: _scope,
+                      segments: const {
+                        SearchScope.photos: 'Photos',
+                        SearchScope.videos: 'Videos',
+                        SearchScope.all: 'All',
+                      },
+                      onChanged: (value) {
+                        setState(() => _scope = value);
+                        refresh();
+                        _runIndexedSearch();
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Local filters search the on-device index. Use Describe for natural-language semantic search.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showSearchSettings() async {
+    await _refreshAiStats();
+    await _refreshVisualStats();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: kIosGroupedBg,
+      showDragHandle: true,
+      builder: (_) => _SearchSettingsSheet(owner: this),
     );
   }
 
@@ -1041,7 +1318,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       case SearchMethod.date:
         return 'Type a date/year…';
       case SearchMethod.voice:
-        return 'Tap the mic to speak…';
+        return 'Describe a photo, e.g. sunset over the sea…';
       default:
         return 'Search…';
     }
@@ -1056,7 +1333,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       SearchMethod.scenes: (Icons.landscape_outlined, 'Scene'),
       SearchMethod.date: (Icons.calendar_month_outlined, 'Date'),
       SearchMethod.color: (Icons.palette_outlined, 'Color'),
-      SearchMethod.voice: (Icons.mic_none_rounded, 'Voice'),
+      SearchMethod.image: (Icons.image_outlined, 'Image'),
+      SearchMethod.voice: (Icons.auto_awesome_outlined, 'Describe'),
     };
 
     return SizedBox(
@@ -1077,18 +1355,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 await _commitCurrentAs(e.key);
                 return;
               }
+              if (e.key == SearchMethod.image) {
+                await _pickImageForVisualSearch();
+                return;
+              }
               setState(() => _method = e.key);
-
               if (e.key == SearchMethod.voice) {
                 final text = _controller.text.trim();
-
                 if (text.isNotEmpty) {
                   await _runSemanticTextSearch(text);
                 }
-
                 return;
               }
-
               if (e.key == SearchMethod.color && _pickedColor != null) {
                 await _runIndexedSearch();
               }
@@ -1101,26 +1379,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 color: active ? AppColors.navyDeep : Colors.white,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: active ? AppColors.navyDeep : kIosSeparator,
-                ),
+                    color: active ? AppColors.navyDeep : kIosSeparator),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    icon,
-                    color: active ? AppColors.mintAccent : AppColors.navyDeep,
-                    size: 24,
-                  ),
+                  Icon(icon,
+                      color: active ? AppColors.mintAccent : AppColors.navyDeep,
+                      size: 24),
                   const SizedBox(height: 7),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: active ? Colors.white : AppColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  Text(label,
+                      style: TextStyle(
+                        color: active ? Colors.white : AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      )),
                 ],
               ),
             ),
@@ -1231,35 +1504,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const IosSectionHeader('Search by image'),
-        IosCard(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _pickImageToSearch,
-            child: const DottedPlaceholder(
-              icon: Icons.add_photo_alternate_outlined,
-              label: 'Pick a photo to find visually similar ones',
-            ),
+        const IosCard(
+          child: DottedPlaceholder(
+            icon: Icons.add_photo_alternate_outlined,
+            label: 'Choose Image above to start the on-device similarity search',
           ),
         ),
       ],
     );
-  }
-
-  /// Hands the chosen photo to the visual search screen, which already runs
-  /// the on-device embedding comparison. This panel was a dead placeholder
-  /// even though that engine works from the photo detail screen.
-  Future<void> _pickImageToSearch() async {
-    final picked = await Navigator.of(context).push<List<AssetEntity>>(
-      MaterialPageRoute(
-        builder: (_) => const AssetPickerScreen(
-          title: 'Pick a photo to search',
-          confirmLabel: 'Search',
-        ),
-      ),
-    );
-    if (!mounted || picked == null || picked.isEmpty) return;
-    if (!context.mounted) return;
-    context.push(AppRoutes.visualSearch, extra: picked.first.id);
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -1271,7 +1523,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         IosSectionHeader(
-          'Voice search',
+          'Describe with voice',
           trailing: _voice == VoiceState.idle
               ? null
               : GestureDetector(
@@ -1430,7 +1682,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         ? null
                         : () => _runSemanticTextSearch(_transcript.text),
                     icon: const Icon(Icons.image_search_rounded),
-                    label: const Text('Search photos with this text'),
+                    label: const Text('Search by description'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.navyDeep,
                       foregroundColor: Colors.white,
@@ -1460,7 +1712,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       child: Text(
                         _scope == SearchScope.videos
                             ? 'Video-audio matching is a UI prototype and is not connected yet.'
-                            : 'Speak a short search phrase. You can edit the transcript before searching.',
+                            : 'Speech is converted to editable text, then the description is matched semantically against indexed photo embeddings.',
                         style: const TextStyle(
                           fontSize: 11.5,
                           color: AppColors.textSecondary,
@@ -1664,6 +1916,104 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  Widget _buildVisualIndexCard() {
+    final progress = _visualProgress;
+    final complete = _visualTotalImages > 0 &&
+        _visualIndexedCount >= _visualTotalImages;
+    return IosCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: AppColors.skyBlue.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.image_search_rounded,
+                  size: 19,
+                  color: AppColors.skyBlue,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Image similarity embeddings',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$_visualIndexedCount / $_visualTotalImages photos ready for image search',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_visualIndexing)
+                IconButton(
+                  tooltip: 'Stop after current image',
+                  onPressed: () => setState(() => _cancelVisualIndex = true),
+                  icon: const Icon(
+                    Icons.stop_circle_outlined,
+                    color: AppColors.errorRed,
+                  ),
+                ),
+            ],
+          ),
+          if (_visualIndexing && progress != null) ...[
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: progress.progress,
+              color: AppColors.navyDeep,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${progress.visited}/${progress.total} checked  •  '
+              '${progress.indexed} new  •  ${progress.failed} failed',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 11.5,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            _visualStatus,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 11.5,
+            ),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.tonalIcon(
+            onPressed: _visualIndexing || complete
+                ? null
+                : _indexMissingVisualImages,
+            icon: Icon(
+              complete ? Icons.check_circle_outline : Icons.add_photo_alternate_outlined,
+              size: 18,
+            ),
+            label: Text(complete ? 'Visual index is complete' : 'Index missing photos'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// النتائج — شبكة صور حقيقية للبحث باللون وبالفهرس الذكي المحلي.
   Widget _buildResults() {
     if (_searching) {
@@ -1741,6 +2091,160 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ],
     ),
   );
+}
+
+class _SearchSettingsSheet extends StatefulWidget {
+  const _SearchSettingsSheet({required this.owner});
+
+  final _SearchScreenState owner;
+
+  @override
+  State<_SearchSettingsSheet> createState() => _SearchSettingsSheetState();
+}
+
+class _SearchSettingsSheetState extends State<_SearchSettingsSheet> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
+      if (mounted && widget.owner.mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final owner = widget.owner;
+    if (!owner.mounted) return const SizedBox.shrink();
+
+    return FractionallySizedBox(
+      heightFactor: 0.92,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Search & Indexing',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Advanced controls stay here so search results remain uncluttered.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh stats',
+                  onPressed: () async {
+                    await owner._refreshAiStats();
+                    await owner._refreshVisualStats();
+                    if (mounted) setState(() {});
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'AI Index',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            owner._buildAiIndexCard(),
+            const SizedBox(height: 22),
+            const Text(
+              'Visual Index',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            owner._buildVisualIndexCard(),
+            const SizedBox(height: 22),
+            const Text(
+              'Semantic Search',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            IosCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.auto_awesome_rounded,
+                          color: AppColors.navyDeep, size: 20),
+                      SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Natural-language descriptions',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Only the text query is sent to the configured FastAPI embedding service. Photo embeddings and similarity matching stay on the device.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Service: ${owner._textEmbeddingApi.baseUrl}',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Empty picking area with a dashed-looking border.

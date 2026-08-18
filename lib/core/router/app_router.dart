@@ -63,7 +63,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             PermissionsScreen(reason: state.extra as String?),
       ),
       ShellRoute(
-        builder: (_, __, child) => MainScaffold(child: child),
+        builder: (_, state, child) =>
+            MainScaffold(child: child, location: state.uri.path),
         routes: [
           GoRoute(path: AppRoutes.home, builder: (_, __) => const HomeScreen()),
           GoRoute(
@@ -137,14 +138,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
 class MainScaffold extends ConsumerStatefulWidget {
   final Widget child;
-  const MainScaffold({super.key, required this.child});
+  final String location;
+  const MainScaffold({
+    super.key,
+    required this.child,
+    required this.location,
+  });
 
   @override
   ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
 
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
-  int _idx = 0;
   static const _tabs = [
     AppRoutes.home,
     AppRoutes.search,
@@ -156,12 +161,14 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   Widget build(BuildContext context) {
     // نخفي شريط التنقّل وقت التحديد المتعدد حتى ما يصير بارين فوق بعض.
     final selecting = ref.watch(selectionProvider).active;
+    final routeIndex = _tabs.indexOf(widget.location);
+    final selectedIndex = routeIndex < 0 ? 0 : routeIndex;
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: selecting
           ? null
           : NavigationBar(
-              selectedIndex: _idx,
+              selectedIndex: selectedIndex,
               height: 64,
               backgroundColor: Colors.white,
               surfaceTintColor: Colors.white,
@@ -169,8 +176,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
               labelBehavior:
                   NavigationDestinationLabelBehavior.onlyShowSelected,
               onDestinationSelected: (i) {
-                setState(() => _idx = i);
-                context.go(_tabs[i]);
+                if (i != selectedIndex) context.go(_tabs[i]);
               },
               destinations: const [
                 NavigationDestination(
