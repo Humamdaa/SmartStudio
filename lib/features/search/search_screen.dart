@@ -21,6 +21,8 @@ import '../visual_search/visual_search_indexer.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import '../visual_search/visual_search_repository.dart';
+import 'search_query.dart';
+import 'search_vocabulary.dart';
 import 'text_embedding_api.dart';
 
 // ═══════════════════════════════════════════════════════════════
@@ -29,9 +31,13 @@ import 'text_embedding_api.dart';
 // The app UI is always English. The AR/EN toggle picks the
 // language the USER types or speaks in — not the interface.
 //
-// Text/OCR/object/person/scene/date use the merged local SQLite AI index.
-// Color keeps the teammate ObjectBox color-distance index and can now be
-// intersected with typed AI filters. Image similarity stays on-device; natural-language descriptions use the FastAPI text-embedding service, while speech is only an input method.
+// Local search is federated across the indexes that already know something:
+// Face Lab supplies people, ObjectBox supplies dominant colors, while
+// YOLO/OCR/scene/date come from the heavier SQLite AI-content index. Filters
+// are intersected by asset id, so a photo does not need one monolithic index
+// row to be searchable. Image similarity stays on-device; natural-language
+// descriptions use the FastAPI text-embedding service, while speech is only
+// an input method.
 // ═══════════════════════════════════════════════════════════════
 
 enum SearchMethod {
@@ -76,10 +82,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   QueryLang _lang = QueryLang.arabic;
   SearchScope _scope = SearchScope.all;
   Color? _pickedColor;
-
-  DateTime? _dateFromMonth;
-  DateTime? _dateToMonth;
-
   final List<_CommittedFilter> _filters = [];
 
   // ── نتائج البحث: text/OCR من v2.1.1، واللون من ObjectBox ─────
@@ -91,7 +93,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<MediaItem> _results = [];
   bool _searching = false;
   Timer? _searchDebounce;
-  String _searchStatus = 'Type a query to search the offline index.';
+  String _searchStatus = 'Type a query to search the available local indexes.';
 
   IndexDashboardStats _aiStats = IndexDashboardStats.empty;
   bool _aiIndexing = false;
@@ -371,7 +373,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     SearchMethod.ocr ||
     SearchMethod.objects ||
     SearchMethod.people ||
-    SearchMethod.scenes => true,
+    SearchMethod.scenes ||
+    SearchMethod.date => true,
     _ => false,
   };
 
@@ -578,286 +581,148 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     setState(() {
       _filters.clear();
       _pickedColor = null;
-
-      _dateFromMonth = null;
-      _dateToMonth = null;
-
       _method = SearchMethod.text;
     });
-
     await _runIndexedSearch();
   }
 
-  bool get _hasDateRange => _dateFromMonth != null && _dateToMonth != null;
-
-  String _monthYearLabel(DateTime value) {
-    return '${value.month.toString().padLeft(2, '0')}/${value.year}';
-  }
-
-  DateTime _nextMonth(DateTime value) {
-    if (value.month == 12) {
-      return DateTime(value.year + 1, 1);
-    }
-
-    return DateTime(value.year, value.month + 1);
-  }
-
-  bool _matchesDateRange(MediaItem item) {
-    if (!_hasDateRange) return true;
-
-    final date = item.asset.createDateTime;
-    final start = DateTime(_dateFromMonth!.year, _dateFromMonth!.month);
-
-    final endExclusive = _nextMonth(
-      DateTime(_dateToMonth!.year, _dateToMonth!.month),
-    );
-
-    return !date.isBefore(start) && date.isBefore(endExclusive);
-  }
-
-  List<MediaItem> _applyDateRange(List<MediaItem> items) {
-    if (!_hasDateRange) return items;
-
-    return items.where(_matchesDateRange).toList(growable: false);
-  }
-
-  static const _monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-
-  Future<DateTime?> _pickMonthYear({
-    required String title,
-    required DateTime initial,
-  }) async {
-    int selectedMonth = initial.month;
-    int selectedYear = initial.year;
-
-    final currentYear = DateTime.now().year;
-
-    return showDialog<DateTime>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(title),
-              content: Row(
-                children: [
-                  Expanded(
-                    child: DropdownButton<int>(
-                      value: selectedMonth,
-                      isExpanded: true,
-                      items: [
-                        for (int month = 1; month <= 12; month++)
-                          DropdownMenuItem(
-                            value: month,
-                            child: Text(_monthNames[month - 1]),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-
-                        setDialogState(() {
-                          selectedMonth = value;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: DropdownButton<int>(
-                      value: selectedYear,
-                      isExpanded: true,
-                      items: [
-                        for (int year = currentYear; year >= 1970; year--)
-                          DropdownMenuItem(value: year, child: Text('$year')),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-
-                        setDialogState(() {
-                          selectedYear = value;
-                        });
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.pop(
-                      dialogContext,
-                      DateTime(selectedYear, selectedMonth),
-                    );
-                  },
-                  child: const Text('Select'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _pickDateRange() async {
-    final now = DateTime.now();
-
-    final from = await _pickMonthYear(
-      title: 'From',
-      initial: _dateFromMonth ?? DateTime(now.year, 1),
-    );
-
-    if (from == null || !mounted) return;
-
-    final to = await _pickMonthYear(
-      title: 'To',
-      initial: _dateToMonth ?? DateTime(now.year, now.month),
-    );
-
-    if (to == null || !mounted) return;
-
-    final normalizedFrom = DateTime(from.year, from.month);
-
-    final normalizedTo = DateTime(to.year, to.month);
-
-    if (normalizedTo.isBefore(normalizedFrom)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('The end month must be after the start month.'),
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _dateFromMonth = normalizedFrom;
-      _dateToMonth = normalizedTo;
-      _method = SearchMethod.text;
-    });
-
-    await _runIndexedSearch();
-  }
-
-  Future<List<MediaItem>> _resolveDateRangeOnly() async {
-    if (!_hasDateRange) {
-      return const <MediaItem>[];
-    }
-
-    final albums = await PhotoManager.getAssetPathList(
-      type: RequestType.image,
-      onlyAll: true,
-    );
-
-    if (albums.isEmpty) {
-      return const <MediaItem>[];
-    }
-
-    final allPhotos = albums.first;
-    final results = <MediaItem>[];
-
-    const pageSize = 200;
-    int page = 0;
-
-    while (true) {
-      final assets = await allPhotos.getAssetListPaged(
-        page: page,
-        size: pageSize,
-      );
-
-      if (assets.isEmpty) break;
-
-      for (final asset in assets) {
-        final item = MediaItem.fromAsset(asset);
-
-        if (_matchesDateRange(item)) {
-          results.add(item);
-        }
-      }
-
-      if (assets.length < pageSize) {
-        break;
-      }
-
-      page++;
-    }
-
-    return results;
+  Future<Set<String>> _colorIdsForArgb(int argb) async {
+    final svc = ref.read(indexingServiceProvider);
+    // One stable tolerance for the lightweight dominant-color index. Keeping
+    // this source independent lets color search work before YOLO/OCR indexing.
+    const maxDistance = 0.32;
+    return svc
+        .searchByColor(argb, maxDistance: maxDistance)
+        .map((row) => row.assetId)
+        .toSet();
   }
 
   Future<Set<String>> _matchingColorIds() async {
     final color = _pickedColor;
     if (color == null) return const <String>{};
-    final svc = ref.read(indexingServiceProvider);
-    // Keep one stable color tolerance for local color-only search.
-    // Semantic descriptions use the separate Describe/FastAPI path.
-    const maxDistance = 0.32;
-    return svc
-        .searchByColor(color.toARGB32(), maxDistance: maxDistance)
-        .map((row) => row.assetId)
-        .toSet();
+    return _colorIdsForArgb(color.toARGB32());
   }
 
-  Future<List<MediaItem>> _resolveColorOnly(Set<String> ids) async {
-    final items = <MediaItem>[];
-    for (final id in ids.take(120)) {
-      final asset = await AssetEntity.fromId(id);
-      if (asset != null) items.add(MediaItem.fromAsset(asset));
+  String _indexedQueryForClause(SearchClause clause) {
+    final value = clause.value.replaceAll('"', ' ').trim();
+    if (value.isEmpty) return '';
+    if (clause.field == SearchField.general) {
+      return clause.exactPhrase || value.contains(' ') ? '"$value"' : value;
     }
-    return items;
+    final prefix = switch (clause.field) {
+      SearchField.people => 'person',
+      SearchField.ocr => 'ocr',
+      SearchField.objects => 'object',
+      SearchField.colors => 'color',
+      SearchField.scenes => 'scene',
+      SearchField.date => 'date',
+      SearchField.general => '',
+    };
+    return '$prefix:"$value"';
   }
 
-  String? _aiColorLabel(Color? color) {
-    if (color == null) return null;
-    final value = color.toARGB32();
-    const labels = <int, String>{
-      0xFFE24B4A: 'red',
-      0xFFFF9500: 'orange-color',
-      0xFFFFCC00: 'yellow',
-      0xFF34C759: 'green',
-      0xFF0FDFAF: 'cyan',
-      0xFF2D5F9E: 'blue',
-      0xFF5856D6: 'blue',
-      0xFFAF52DE: 'purple',
-      0xFF8E8E93: 'gray',
-      0xFF1A1A2E: 'black',
-      0xFFFFFFFF: 'white',
-      0xFF8B5A2B: 'brown',
-    };
-    return labels[value];
+  /// Returns ids for one logical clause from every local source that can
+  /// answer it. Sources are UNIONed inside a clause; different clauses are
+  /// intersected later. Example: `Fouad red` can use Face Lab for Fouad and
+  /// ObjectBox for red even when neither photo has a heavy AI-index row.
+  Future<Set<String>> _federatedIdsForClause(SearchClause clause) async {
+    final indexedQuery = _indexedQueryForClause(clause);
+
+    switch (clause.field) {
+      case SearchField.people:
+        final ids = await _smart.searchPersonAssetIds(clause.value);
+        if (indexedQuery.isNotEmpty) {
+          ids.addAll(
+            await _smart.searchIndexedAssetIds(
+              indexedQuery,
+              domain: SmartSearchDomain.general,
+            ),
+          );
+        }
+        return ids;
+
+      case SearchField.colors:
+        final ids = <String>{};
+        final argb = SearchVocabulary.colorArgbForTerm(clause.value);
+        if (argb != null) ids.addAll(await _colorIdsForArgb(argb));
+        if (indexedQuery.isNotEmpty) {
+          ids.addAll(
+            await _smart.searchIndexedAssetIds(
+              indexedQuery,
+              domain: SmartSearchDomain.general,
+            ),
+          );
+        }
+        return ids;
+
+      case SearchField.general:
+        final ids = <String>{};
+        if (indexedQuery.isNotEmpty) {
+          ids.addAll(
+            await _smart.searchIndexedAssetIds(
+              indexedQuery,
+              domain: SmartSearchDomain.general,
+            ),
+          );
+        }
+
+        // A normal unqualified word may be a person's name. Query Face Lab
+        // directly so naming someone is useful immediately, without Index All.
+        ids.addAll(await _smart.searchPersonAssetIds(clause.value));
+
+        // Likewise, a normal color word can use the lightweight ObjectBox
+        // analysis that starts independently from the heavy content index.
+        final argb = SearchVocabulary.colorArgbForTerm(clause.value);
+        if (argb != null) ids.addAll(await _colorIdsForArgb(argb));
+        return ids;
+
+      case SearchField.ocr:
+      case SearchField.objects:
+      case SearchField.scenes:
+      case SearchField.date:
+        if (indexedQuery.isEmpty) return const <String>{};
+        return _smart.searchIndexedAssetIds(
+          indexedQuery,
+          domain: SmartSearchDomain.general,
+        );
+    }
+  }
+
+  Future<List<MediaItem>> _resolveFederatedIds(Set<String> ids) async {
+    if (ids.isEmpty) return const [];
+
+    // Keep search responsive on huge libraries. Resolve in modest batches,
+    // then order by the real PhotoManager creation date so Face/ObjectBox-only
+    // results mix naturally with AI-indexed results.
+    final candidates = ids.take(500).toList(growable: false);
+    final items = <MediaItem>[];
+    const batchSize = 32;
+    for (var start = 0; start < candidates.length; start += batchSize) {
+      final end = (start + batchSize < candidates.length)
+          ? start + batchSize
+          : candidates.length;
+      final assets = await Future.wait(
+        candidates.sublist(start, end).map(AssetEntity.fromId),
+      );
+      for (final asset in assets) {
+        if (asset != null) items.add(MediaItem.fromAsset(asset));
+      }
+    }
+    items.sort((a, b) => b.createDate.compareTo(a.createDate));
+    return items.take(120).toList(growable: false);
   }
 
   Future<void> _runIndexedSearch() async {
     if (_method == SearchMethod.image || _method == SearchMethod.voice) return;
     final query = _composedQuery();
-    final hasColor = _pickedColor != null;
-    final hasDate = _hasDateRange;
-
-    if (query.isEmpty && !hasColor && !hasDate) {
+    final hasPickedColor = _pickedColor != null;
+    if (query.isEmpty && !hasPickedColor) {
       if (!mounted) return;
       setState(() {
         _results = [];
         _searching = false;
         _searchStatus =
-            'Type a query or add a filter to search the offline index.';
+            'Type a query or add a filter to search the local indexes.';
       });
       return;
     }
@@ -867,47 +732,51 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         _results = [];
         _searching = false;
         _searchStatus =
-            'The current AI index covers photos; video semantic search is not wired yet.';
+            'The current smart indexes cover photos; video semantic search is not wired yet.';
       });
       return;
     }
 
     setState(() {
       _searching = true;
-      _searchStatus = 'Searching locally…';
+      _searchStatus = 'Searching available local indexes…';
     });
-    try {
-      List<MediaItem> items;
 
-      if (query.isEmpty && !hasColor && hasDate) {
-        items = await _resolveDateRangeOnly();
-      } else if (query.isEmpty && hasColor) {
+    try {
+      Set<String>? combinedIds;
+
+      if (query.isNotEmpty) {
+        final parsed = SearchQueryParser.parse(query);
+        for (final clause in parsed.clauses) {
+          final clauseIds = await _federatedIdsForClause(clause);
+          if (combinedIds == null) {
+            combinedIds = Set<String>.of(clauseIds);
+          } else {
+            combinedIds.retainAll(clauseIds);
+          }
+          if (combinedIds.isEmpty) break;
+        }
+      }
+
+      if (hasPickedColor) {
         final colorIds = await _matchingColorIds();
-        items = await _resolveColorOnly(colorIds);
-      } else {
-        // Combined filters must all come from the same indexed snapshot.
-        // This avoids an empty result caused only by SQLite and ObjectBox
-        // covering different subsets of the gallery.
-        final colorLabel = hasColor ? _aiColorLabel(_pickedColor) : null;
-        final combinedQuery = colorLabel == null
-            ? query
-            : '$query color:"$colorLabel"';
-        final hits = await _smart.search(
-          combinedQuery,
-          domain: SmartSearchDomain.general,
-        );
-        items = hits.map((e) => e.item).toList(growable: false);
+        if (combinedIds == null) {
+          combinedIds = Set<String>.of(colorIds);
+        } else {
+          combinedIds.retainAll(colorIds);
+        }
       }
-      if (hasDate) {
-        items = _applyDateRange(items);
-      }
+
+      final items = await _resolveFederatedIds(
+        combinedIds ?? const <String>{},
+      );
       if (!mounted) return;
       setState(() {
         _results = items;
         _searching = false;
         _searchStatus = items.isEmpty
-            ? 'No indexed photo matched all selected filters.'
-            : '${items.length} local result${items.length == 1 ? '' : 's'}';
+            ? 'No available local index matched all selected filters.'
+            : '${items.length} local result${items.length == 1 ? '' : 's'} • using available indexes';
       });
     } catch (error) {
       if (!mounted) return;
@@ -1311,7 +1180,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
               const IosSectionHeader('Search by'),
               _buildMethodRow(),
-              if (_filters.isNotEmpty || _pickedColor != null || _hasDateRange)
+              if (_filters.isNotEmpty || _pickedColor != null)
                 _buildActiveFilters(),
               _buildQueryOptionsSummary(),
               if (_method == SearchMethod.color) _buildColorPicker(),
@@ -1576,11 +1445,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           final (icon, label) = e.value;
           return GestureDetector(
             onTap: () async {
-              if (e.key == SearchMethod.date) {
-                await _pickDateRange();
-                return;
-              }
-
               if (_supportsIndexedText(e.key)) {
                 // iPhone-like token flow for every searchable domain,
                 // INCLUDING All: type a term -> tap a domain -> the term is
@@ -1666,33 +1530,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               label: const Text('Color'),
               onDeleted: () async {
                 setState(() => _pickedColor = null);
-                await _runIndexedSearch();
-              },
-              visualDensity: VisualDensity.compact,
-              backgroundColor: AppColors.mintAccent.withValues(alpha: 0.14),
-              side: BorderSide(
-                color: AppColors.navyDeep.withValues(alpha: 0.18),
-              ),
-              labelStyle: const TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
-              deleteIconColor: AppColors.navyDeep,
-            ),
-          if (_hasDateRange)
-            InputChip(
-              label: Text(
-                'Date: '
-                '${_monthYearLabel(_dateFromMonth!)}'
-                ' → '
-                '${_monthYearLabel(_dateToMonth!)}',
-              ),
-              onDeleted: () async {
-                setState(() {
-                  _dateFromMonth = null;
-                  _dateToMonth = null;
-                });
-
                 await _runIndexedSearch();
               },
               visualDensity: VisualDensity.compact,

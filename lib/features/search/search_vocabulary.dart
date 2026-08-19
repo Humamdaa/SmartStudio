@@ -241,6 +241,25 @@ class SearchVocabulary {
     'ديسمبر': 'december',
   };
 
+  // Representative colors shared with the lightweight ObjectBox color index.
+  // Text such as "red" / "أحمر" can therefore use already-analyzed
+  // dominant colors even when the heavy YOLO/OCR index has not seen a photo.
+  static const Map<String, int> _canonicalColorArgb = {
+    'red': 0xFFE24B4A,
+    'orange': 0xFFFF9500,
+    'orange color': 0xFFFF9500,
+    'yellow': 0xFFFFCC00,
+    'green': 0xFF34C759,
+    'cyan': 0xFF0FDFAF,
+    'blue': 0xFF2D5F9E,
+    'purple': 0xFFAF52DE,
+    'pink': 0xFFFF2D55,
+    'gray': 0xFF8E8E93,
+    'black': 0xFF1A1A2E,
+    'white': 0xFFFFFFFF,
+    'brown': 0xFF8B5A2B,
+  };
+
   static const Map<String, String> _arabicDisplay = {
     'person': 'شخص',
     'bicycle': 'دراجة',
@@ -344,6 +363,15 @@ class SearchVocabulary {
       }
     }
     return terms;
+  }
+
+  /// Returns a representative ARGB color when [term] is a known color word.
+  /// The term may already be canonical ("red") or an Arabic/common alias.
+  static int? colorArgbForTerm(String term) {
+    final normalized = normalize(term);
+    if (normalized.isEmpty) return null;
+    final canonical = _aliases[normalized] ?? normalized;
+    return _canonicalColorArgb[canonical];
   }
 
   static String arabicName(String label) {

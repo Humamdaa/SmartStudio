@@ -23,6 +23,7 @@ class PreciseSearchRepository {
   Future<List<SearchHit>> search(
     String query, {
     SearchScope scope = SearchScope.general,
+    int limit = 120,
   }) async {
     final parsed = SearchQueryParser.parse(query, scope: scope);
     if (parsed.isEmpty) return const [];
@@ -35,14 +36,18 @@ class PreciseSearchRepository {
           ),
         )
         .toList(growable: false);
-    final rows = await _database.searchIndexAdvanced(conditions, limit: 300);
+    final rowLimit = limit < 300 ? 300 : limit;
+    final rows = await _database.searchIndexAdvanced(
+      conditions,
+      limit: rowLimit,
+    );
     final hits = rows.map((row) => _rank(row, parsed)).toList();
     hits.sort((a, b) {
       final byScore = b.score.compareTo(a.score);
       if (byScore != 0) return byScore;
       return b.takenAt.compareTo(a.takenAt);
     });
-    return hits.take(120).toList(growable: false);
+    return hits.take(limit).toList(growable: false);
   }
 
   SearchHit _rank(Map<String, dynamic> row, ParsedSearchQuery parsed) {
