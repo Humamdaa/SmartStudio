@@ -15,6 +15,7 @@ import '../../data/models/media_item.dart';
 import '../../data/prefs/app_prefs.dart';
 import '../../data/repositories/media_repository.dart';
 import '../../services/smart_search_bridge.dart';
+import '../../services/gallery/complete_smart_index_service.dart';
 import '../albums/indexing_providers.dart';
 import '../visual_search/visual_embedding_service.dart';
 import '../visual_search/visual_search_indexer.dart';
@@ -107,6 +108,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _mediaRepository = MediaRepository();
   final _visualEmbeddingService = VisualEmbeddingService();
   late final VisualSearchIndexer _visualIndexer;
+  late final CompleteSmartIndexService _completeSmartIndex;
+  bool _lastCompleteSmartIndexRunning = false;
   int _visualIndexedCount = 0;
   int _visualTotalImages = 0;
   bool _visualIndexing = false;
@@ -122,6 +125,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       repository: _visualSearchRepository,
       mediaRepository: _mediaRepository,
     );
+    _completeSmartIndex = CompleteSmartIndexService(
+      galleryIndexer: ref.read(indexingServiceProvider),
+      contentBridge: _smart,
+      visualIndexer: _visualIndexer,
+      visualRepository: _visualSearchRepository,
+      mediaRepository: _mediaRepository,
+    );
+    _lastCompleteSmartIndexRunning = _completeSmartIndex.isRunning;
+    _completeSmartIndex.progress.addListener(_onCompleteSmartIndexChanged);
     _loadSmartState();
     _initSpeech();
   }
@@ -206,6 +218,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final arabic = await AppPrefs.instance.arabicOcrEnabled;
     await _refreshAiStats();
     await _refreshVisualStats();
+    await _refreshCompleteSmartIndex();
     if (!mounted) return;
     setState(() {
       _backgroundEnabled = background;
@@ -236,8 +249,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  Future<void> _refreshCompleteSmartIndex() async {
+    try {
+      await _completeSmartIndex.refresh();
+    } catch (_) {
+      // The permission flow may still be active during first startup.
+    }
+  }
+
+  void _onCompleteSmartIndexChanged() {
+    final running = _completeSmartIndex.isRunning;
+    if (_lastCompleteSmartIndexRunning && !running) {
+      unawaited(_refreshAiStats());
+      unawaited(_refreshVisualStats());
+    }
+    _lastCompleteSmartIndexRunning = running;
+  }
+
   Future<void> _indexMissingVisualImages() async {
-    if (_visualIndexing) return;
+    if (_visualIndexing || _completeSmartIndex.isRunning) return;
     setState(() {
       _visualIndexing = true;
       _cancelVisualIndex = false;
@@ -288,12 +318,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return;
     }
 
-    final assets = await _mediaRepository.loadRecentAssets(
-      type: RequestType.image,
-      limit: 120,
-    );
+    final total = await _mediaRepository.getTotalCount(RequestType.image);
     if (!mounted) return;
-    if (assets.isEmpty) {
+    if (total <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No photos are available to search with.')),
       );
@@ -305,61 +332,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       showDragHandle: true,
-      builder: (sheetContext) {
-        return FractionallySizedBox(
-          heightFactor: 0.82,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Choose a photo',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Select a photo to find visually similar images on this device.',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    mainAxisSpacing: 3,
-                    crossAxisSpacing: 3,
-                  ),
-                  itemCount: assets.length,
-                  itemBuilder: (_, index) {
-                    final asset = assets[index];
-                    return GestureDetector(
-                      onTap: () => Navigator.of(sheetContext).pop(asset),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image(
-                          image: AssetEntityImageProvider(
-                            asset,
-                            isOriginal: false,
-                            thumbnailSize: const ThumbnailSize.square(220),
-                          ),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      builder: (_) => _VisualPhotoPickerSheet(
+        repository: _mediaRepository,
+        total: total,
+      ),
     );
 
     if (selected != null && mounted) {
@@ -789,7 +765,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _indexNextAi() async {
-    if (_aiIndexing) return;
+    if (_aiIndexing || _completeSmartIndex.isRunning) return;
     setState(() {
       _aiIndexing = true;
       _cancelAiIndex = false;
@@ -838,7 +814,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _reindexLatestAi() async {
-    if (_aiIndexing) return;
+    if (_aiIndexing || _completeSmartIndex.isRunning) return;
     setState(() {
       _aiIndexing = true;
       _cancelAiIndex = false;
@@ -887,7 +863,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _indexAllAi() async {
-    if (_aiIndexing) return;
+    if (_aiIndexing || _completeSmartIndex.isRunning) return;
     setState(() {
       _aiIndexing = true;
       _cancelAiIndex = false;
@@ -921,7 +897,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             result.pausedReason ??
             (result.cancelled
                 ? 'Indexing stopped safely; it can resume later.'
-                : 'Full index pass finished: ${result.processed} processed, ${result.failed} failed.');
+                : 'Content index finished: ${result.processed} processed, ${result.failed} failed.');
       });
       if (_controller.text.trim().isNotEmpty) await _runIndexedSearch();
     } catch (error) {
@@ -944,6 +920,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _toggleArabicOcr(bool enabled) async {
     setState(() => _arabicOcrEnabled = enabled);
     await AppPrefs.instance.setArabicOcrEnabled(enabled);
+    await _refreshCompleteSmartIndex();
   }
 
   Future<void> _retryFailedAi() async {
@@ -999,8 +976,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _searchDebounce?.cancel();
     _cancelVisualIndex = true;
     _speech.cancel();
+    _completeSmartIndex.progress.removeListener(_onCompleteSmartIndexChanged);
     _textEmbeddingApi.close();
-    _visualEmbeddingService.dispose();
+    unawaited(_visualEmbeddingService.dispose());
     _controller.dispose();
     _transcript.dispose();
     super.dispose();
@@ -1388,6 +1366,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _showSearchSettings() async {
     await _refreshAiStats();
     await _refreshVisualStats();
+    await _refreshCompleteSmartIndex();
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -1911,6 +1890,229 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  Widget _buildCompleteSmartIndexCard() {
+    return ValueListenableBuilder<CompleteSmartIndexState>(
+      valueListenable: _completeSmartIndex.progress,
+      builder: (context, state, _) {
+        final snapshot = state.snapshot;
+        final total = snapshot.total;
+        final complete = snapshot.isComplete;
+        return IosCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.mintAccent.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 20,
+                      color: AppColors.mintAccent,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Complete Smart Index',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Continues only missing work; completed photos are never reprocessed.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (complete)
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.mintAccent,
+                      size: 22,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              LinearProgressIndicator(
+                value: state.overallFraction.clamp(0.0, 1.0),
+                color: AppColors.navyDeep,
+              ),
+              const SizedBox(height: 12),
+              _buildSmartIndexStageRow(
+                icon: Icons.photo_library_outlined,
+                label: 'Gallery analysis',
+                subtitle: 'pHash • dominant color • quality',
+                done: snapshot.safeGalleryAnalyzed,
+                total: total,
+                active: state.running &&
+                    state.stage == CompleteSmartIndexStage.gallery,
+              ),
+              _buildSmartIndexStageRow(
+                icon: Icons.psychology_alt_outlined,
+                label: 'Content & text',
+                subtitle: snapshot.arabicOcrEnabled
+                    ? 'Objects • scenes • English + Arabic OCR • metadata'
+                    : 'Objects • scenes • English OCR • metadata • Arabic off',
+                done: snapshot.safeContentIndexed,
+                total: total,
+                active: state.running &&
+                    state.stage == CompleteSmartIndexStage.content,
+              ),
+              _buildSmartIndexStageRow(
+                icon: Icons.people_alt_outlined,
+                label: 'People',
+                subtitle: 'Face v3 • alignment • MobileFaceNet • clustering',
+                done: snapshot.safePeopleIndexed,
+                total: total,
+                active: state.running &&
+                    state.stage == CompleteSmartIndexStage.people,
+              ),
+              _buildSmartIndexStageRow(
+                icon: Icons.image_search_outlined,
+                label: 'Visual search',
+                subtitle: 'Image embeddings for Image + Describe search',
+                done: snapshot.safeVisualIndexed,
+                total: total,
+                active: state.running &&
+                    state.stage == CompleteSmartIndexStage.visual,
+                showDivider: false,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                state.status,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11.5,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (state.running)
+                OutlinedButton.icon(
+                  onPressed: _completeSmartIndex.stop,
+                  icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                  label: const Text('Stop safely'),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: complete || _aiIndexing || _visualIndexing
+                      ? null
+                      : () async {
+                          await _completeSmartIndex.start();
+                        },
+                  icon: Icon(
+                    complete
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.play_arrow_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    complete ? 'Smart index complete' : 'Continue Smart Index',
+                  ),
+                ),
+              const SizedBox(height: 8),
+              const Text(
+                'Order: Gallery → Content + OCR → People → Visual. The manual Content, Face Lab and Visual controls below remain available. Background Content/People switches can continue their own stages after you leave the app.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 10.8,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSmartIndexStageRow({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required int done,
+    required int total,
+    required bool active,
+    bool showDivider = true,
+  }) {
+    final stageComplete = total > 0 && done >= total;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                stageComplete
+                    ? Icons.check_circle_rounded
+                    : active
+                        ? Icons.timelapse_rounded
+                        : icon,
+                size: 19,
+                color: stageComplete || active
+                    ? AppColors.mintAccent
+                    : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 10.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                total <= 0 ? '—' : '$done / $total',
+                style: TextStyle(
+                  color: stageComplete
+                      ? AppColors.mintAccent
+                      : AppColors.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (showDivider) const Divider(height: 1, color: kIosSeparator),
+      ],
+    );
+  }
+
   Widget _buildAiIndexCard() {
     final s = _aiStats;
     return IosCard(
@@ -1974,7 +2176,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               OutlinedButton.icon(
                 onPressed: _aiIndexing ? null : _indexAllAi,
                 icon: const Icon(Icons.all_inclusive_rounded, size: 18),
-                label: const Text('Index all'),
+                label: const Text('Index all content'),
               ),
               if (s.failedImages > 0)
                 TextButton.icon(
@@ -1990,7 +2192,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             iconBg: AppColors.mintAccent,
             title: 'Background AI indexing',
             subtitle:
-                'Runs in small Android slices; low battery blocks background only',
+                'YOLO + Scene + OCR in small Android slices; People has a separate background switch',
             showDivider: true,
             trailing: IosSwitch(
               value: _backgroundEnabled,
@@ -2259,6 +2461,7 @@ class _SearchSettingsSheetState extends State<_SearchSettingsSheet> {
                   onPressed: () async {
                     await owner._refreshAiStats();
                     await owner._refreshVisualStats();
+                    await owner._refreshCompleteSmartIndex();
                     if (mounted) setState(() {});
                   },
                   icon: const Icon(Icons.refresh_rounded),
@@ -2266,6 +2469,17 @@ class _SearchSettingsSheetState extends State<_SearchSettingsSheet> {
               ],
             ),
             const SizedBox(height: 18),
+            const Text(
+              'Smart Index',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            owner._buildCompleteSmartIndexCard(),
+            const SizedBox(height: 22),
             const Text(
               'AI Index',
               style: TextStyle(
@@ -2383,3 +2597,134 @@ class DottedPlaceholder extends StatelessWidget {
     ),
   );
 }
+
+class _VisualPhotoPickerSheet extends StatefulWidget {
+  const _VisualPhotoPickerSheet({
+    required this.repository,
+    required this.total,
+  });
+
+  final MediaRepository repository;
+  final int total;
+
+  @override
+  State<_VisualPhotoPickerSheet> createState() =>
+      _VisualPhotoPickerSheetState();
+}
+
+class _VisualPhotoPickerSheetState extends State<_VisualPhotoPickerSheet> {
+  static const _pageSize = 80;
+  final ScrollController _scrollController = ScrollController();
+  final List<AssetEntity> _assets = [];
+  bool _loading = false;
+  bool _hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _loadMore();
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _loading || !_hasMore) return;
+    if (_scrollController.position.extentAfter < 700) _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    setState(() => _loading = true);
+    final start = _assets.length;
+    final requestedEnd = start + _pageSize;
+    final end = requestedEnd > widget.total ? widget.total : requestedEnd;
+    try {
+      final next = await widget.repository.loadAssetRange(
+        type: RequestType.image,
+        start: start,
+        end: end,
+      );
+      if (!mounted) return;
+      setState(() {
+        _assets.addAll(next);
+        _hasMore = _assets.length < widget.total && next.isNotEmpty;
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      heightFactor: 0.86,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Choose a photo',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_assets.length}/${widget.total} loaded • scroll for older photos',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: GridView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 3,
+                crossAxisSpacing: 3,
+              ),
+              itemCount: _assets.length,
+              itemBuilder: (_, index) {
+                final asset = _assets[index];
+                return GestureDetector(
+                  onTap: () => Navigator.of(context).pop(asset),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image(
+                      image: AssetEntityImageProvider(
+                        asset,
+                        isOriginal: false,
+                        thumbnailSize: const ThumbnailSize.square(220),
+                      ),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 14),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

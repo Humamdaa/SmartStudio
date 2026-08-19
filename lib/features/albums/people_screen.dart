@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -7,10 +6,11 @@ import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/router/app_router.dart';
 import '../../data/models/media_item.dart';
+import '../../data/prefs/app_prefs.dart';
 import '../../data/models/person_group.dart';
 import '../../data/repositories/person_repository.dart';
-import '../../services/ai/face_service.dart';
-import '../../services/device/device_health_service.dart';
+import '../../services/gallery/background_indexer.dart';
+import '../../services/gallery/face_index_service.dart';
 
 class PeopleScreen extends StatefulWidget {
   const PeopleScreen({super.key});
@@ -25,18 +25,70 @@ class _PeopleScreenState extends State<PeopleScreen> {
   int _candidateCount = 0;
   bool _showCandidates = false;
   bool _rebuilding = false;
-  bool _cancelRebuild = false;
   int _rebuildProcessed = 0;
   int _rebuildTotal = 0;
   int _rebuildFailed = 0;
   int _rebuildDetected = 0;
   int _rebuildIgnored = 0;
   String? _rebuildStatus;
+  bool _backgroundFacesEnabled = false;
+  int _lastFaceProcessed = -1;
+  bool _lastFaceRunning = false;
 
   @override
   void initState() {
     super.initState();
+    FaceIndexService.instance.progress.addListener(_onFaceProgress);
+    _applyFaceProgress(FaceIndexService.instance.progress.value, notify: false);
+    _lastFaceRunning = FaceIndexService.instance.progress.value.running;
     _reload();
+    _loadBackgroundFaceSetting();
+  }
+
+  @override
+  void dispose() {
+    FaceIndexService.instance.progress.removeListener(_onFaceProgress);
+    super.dispose();
+  }
+
+  Future<void> _loadBackgroundFaceSetting() async {
+    final enabled = await AppPrefs.instance.backgroundFaceIndexingEnabled;
+    if (mounted) setState(() => _backgroundFacesEnabled = enabled);
+  }
+
+  void _onFaceProgress() {
+    final value = FaceIndexService.instance.progress.value;
+    final shouldReload =
+        (value.processed > 0 && value.processed % 20 == 0 &&
+            value.processed != _lastFaceProcessed) ||
+        (_lastFaceRunning && !value.running);
+    _lastFaceProcessed = value.processed;
+    _lastFaceRunning = value.running;
+    _applyFaceProgress(value);
+    if (shouldReload) _reload();
+  }
+
+  void _applyFaceProgress(FaceIndexProgress value, {bool notify = true}) {
+    void apply() {
+      _rebuilding = value.running;
+      _rebuildProcessed = value.processed;
+      _rebuildTotal = value.total;
+      _rebuildFailed = value.failed;
+      _rebuildDetected = value.detected;
+      _rebuildIgnored = value.ignored;
+      _rebuildStatus = value.status;
+    }
+
+    if (notify && mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
+  Future<void> _toggleBackgroundFaces(bool enabled) async {
+    setState(() => _backgroundFacesEnabled = enabled);
+    await BackgroundIndexService.instance.setFaceEnabled(enabled);
   }
 
   Future<void> _reload() async {
@@ -210,8 +262,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
           title: Text(limit == 20 ? 'فهرسة 20 صورة جديدة؟' : 'إكمال فهرسة الوجوه؟'),
           content: Text(
             limit == 20
-                ? 'سيتم تخطي كل صورة اكتملت سابقًا بـFace v3 ومعالجة 20 صورة غير مفهرسة فقط، بدءًا من الأحدث. التقدم محفوظ حتى لو أوقفت العملية.'
-                : 'سيتم تخطي كل الصور المكتملة سابقًا ومتابعة الصور غير المفهرسة فقط حتى نهاية المكتبة. التقدم محفوظ حتى بعد إغلاق التطبيق. لا يتم تشغيل YOLO أو OCR.',
+                ? 'سيتم تخطي كل صورة اكتملت سابقًا بـFace v3 ومعالجة 20 صورة غير مفهرسة فقط. يمكنك مغادرة صفحة الأشخاص وستستمر المعالجة داخل التطبيق.'
+                : 'سيتم متابعة الصور غير المفهرسة فقط حتى نهاية المكتبة. يمكنك مغادرة صفحة الأشخاص؛ والتقدم محفوظ دائمًا. لا يتم تشغيل YOLO أو OCR.',
           ),
           actions: [
             TextButton(
@@ -228,160 +280,19 @@ class _PeopleScreenState extends State<PeopleScreen> {
     );
     if (confirmed != true) return;
 
-    setState(() {
-      _rebuilding = true;
-      _cancelRebuild = false;
-      _rebuildProcessed = 0;
-      _rebuildTotal = limit ?? 0;
-      _rebuildFailed = 0;
-      _rebuildDetected = 0;
-      _rebuildIgnored = 0;
-      _rebuildStatus = 'تجهيز Face Lab v3 واستعادة التقدم…';
-    });
-
     try {
-      final permission = await PhotoManager.requestPermissionExtend();
-      if (!permission.isAuth) {
-        throw StateError('لا يوجد إذن للوصول إلى الصور.');
+      final started = await FaceIndexService.instance.start(limit: limit);
+      if (!started && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Face Lab يعمل بالفعل في الخلفية داخل التطبيق.')),
+        );
       }
-      final paths = await PhotoManager.getAssetPathList(
-        type: RequestType.image,
-        onlyAll: true,
-      );
-      if (paths.isEmpty) {
-        throw StateError('لا توجد صور متاحة للتحليل.');
-      }
-      final album = paths.first;
-      final libraryTotal = await album.assetCountAsync;
-
-      // One lightweight SQLite query restores persistent progress. We then
-      // skip these ids while paging through the gallery; image bytes are never
-      // opened for already-completed photos.
-      final completedIds = await FaceService.instance.completedAssetIds();
-      final estimatedRemaining =
-          (libraryTotal - completedIds.length).clamp(0, libraryTotal).toInt();
-      // The database may still contain ids for photos deleted from the device,
-      // so this number is only a UI estimate. The actual stop condition below
-      // is based on finding 20 new photos or physically reaching gallery end.
-      final displayTarget = limit ?? estimatedRemaining;
-
-      if (!mounted) return;
-      setState(() {
-        _rebuildTotal = displayTarget;
-        _rebuildStatus =
-            'متبقٍ تقريبًا $estimatedRemaining صورة للوجوه؛ جاري التحقق من المكتبة…';
-      });
-
-      const pageSize = 60;
-      var page = 0;
-      var reachedLibraryEnd = false;
-      while ((limit == null || _rebuildProcessed < limit) &&
-          !_cancelRebuild &&
-          mounted) {
-        final assets = await album.getAssetListPaged(page: page, size: pageSize);
-        if (assets.isEmpty) {
-          reachedLibraryEnd = true;
-          break;
-        }
-        page++;
-
-        for (final asset in assets) {
-          if (_cancelRebuild ||
-              !mounted ||
-              (limit != null && _rebuildProcessed >= limit)) {
-            break;
-          }
-
-          // This is the key resume rule: an already-complete photo costs no
-          // face detection, image decode, alignment, or MobileFaceNet pass.
-          if (completedIds.contains(asset.id)) continue;
-
-          if (_rebuildProcessed % 4 == 0) {
-            final gate = await DeviceHealthService.instance.canContinueIndexing(
-              checkLowBattery: false,
-              checkThermal: true,
-            );
-            if (!gate.allowed) {
-              setState(() => _rebuildStatus = gate.reason);
-              _cancelRebuild = true;
-              break;
-            }
-          }
-
-          final file = await asset.file;
-          if (file == null) {
-            _rebuildProcessed++;
-            _rebuildFailed++;
-            continue;
-          }
-          if (mounted) {
-            setState(() {
-              _rebuildStatus = limit == null
-                  ? 'Face Lab فقط: ${asset.title ?? 'صورة'}  '
-                        '${_rebuildProcessed + 1} صورة جديدة'
-                  : 'Face Lab فقط: ${asset.title ?? 'صورة'}  '
-                        '${_rebuildProcessed + 1}/$limit';
-            });
-          }
-          try {
-            final result = await FaceService.instance.analyzeAndStore(
-              assetId: asset.id,
-              imagePath: file.path,
-              // Do not force a rerun. Old/partial pipeline rows are still
-              // reprocessed automatically by FaceService itself.
-              force: false,
-            );
-            _rebuildDetected += result.detectedFaceCount;
-            _rebuildIgnored += result.ignoredFaceCount;
-          } catch (error, stackTrace) {
-            _rebuildFailed++;
-            debugPrint('PixMind Face Lab ${asset.id}: $error\n$stackTrace');
-          }
-          _rebuildProcessed++;
-
-          if (_rebuildProcessed % 20 == 0) {
-            // Global refinement uses stored embeddings only; no inference is
-            // repeated here.
-            await FaceService.instance.refineClusters(maxMerges: 80);
-            await _reload();
-          } else if (mounted) {
-            setState(() {});
-          }
-        }
-      }
-
-      // If stale database ids made the initial estimate slightly optimistic,
-      // make the progress bar finish honestly at the amount actually found.
-      if (reachedLibraryEnd && _rebuildProcessed < _rebuildTotal && mounted) {
-        setState(() => _rebuildTotal = _rebuildProcessed);
-      }
-
-      if (!_cancelRebuild && _rebuildProcessed > 0) {
-        await FaceService.instance.refineClusters(maxMerges: 160);
-      }
-      await _reload();
+    } catch (error) {
       if (mounted) {
-        setState(() {
-          if (_cancelRebuild) {
-            _rebuildStatus =
-                'تم إيقاف Face Lab بعد $_rebuildProcessed صورة. التقدم محفوظ؛ المرة القادمة سيكمل من الصور غير المفهرسة.';
-          } else if (_rebuildProcessed == 0) {
-            _rebuildStatus = 'كل الصور الحالية مفهرسة للوجوه بالفعل.';
-          } else {
-            _rebuildStatus =
-                'اكتمل Face Lab: عالج $_rebuildProcessed صورة جديدة، '
-                'كشف $_rebuildDetected وجهًا وتجاهل $_rebuildIgnored وجهًا بعيدًا/ضعيفًا. '
-                'تعذر $_rebuildFailed صورة. الضغط مرة أخرى سيبدأ من الصور المتبقية.';
-          }
-        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر بدء Face Lab: $error')),
+        );
       }
-    } catch (error, stackTrace) {
-      debugPrint('PixMind Face Lab failed: $error\n$stackTrace');
-      if (mounted) {
-        setState(() => _rebuildStatus = 'تعذر Face Lab: $error');
-      }
-    } finally {
-      if (mounted) setState(() => _rebuilding = false);
     }
   }
 
@@ -416,10 +327,27 @@ class _PeopleScreenState extends State<PeopleScreen> {
               detected: _rebuildDetected,
               ignored: _rebuildIgnored,
               status: _rebuildStatus,
-              onStop: _rebuilding
-                  ? () => setState(() => _cancelRebuild = true)
-                  : null,
+              onStop: _rebuilding ? FaceIndexService.instance.stop : null,
               onRebuild: _rebuilding ? null : _startFaceRebuild,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+              child: Card(
+                elevation: 0,
+                child: SwitchListTile.adaptive(
+                  value: _backgroundFacesEnabled,
+                  onChanged: _toggleBackgroundFaces,
+                  secondary: const Icon(Icons.battery_saver_outlined),
+                  title: const Text(
+                    'معالجة الأشخاص بالخلفية',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: const Text(
+                    'Android يعالج دفعات صغيرة من 4 صور عند توفر البطارية والحرارة المناسبة. Face Lab اليدوي يبقى أسرع.',
+                    style: TextStyle(fontSize: 11.5),
+                  ),
+                ),
+              ),
             ),
             if (_candidateCount > 0)
               Padding(
