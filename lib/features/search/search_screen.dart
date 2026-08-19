@@ -102,6 +102,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _cancelAiIndex = false;
   bool _backgroundEnabled = false;
   bool _arabicOcrEnabled = true;
+  bool _videoIndexingEnabled = true;
   String _aiStatus = 'Offline Content index is ready.';
   double? _aiProgress;
   int _ocrIndexedCount = 0;
@@ -216,6 +217,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _loadSmartState() async {
     final background = await AppPrefs.instance.backgroundIndexingEnabled;
     final arabic = await AppPrefs.instance.arabicOcrEnabled;
+    final videoIndexing = await AppPrefs.instance.videoIndexingEnabled;
     await _refreshAiStats();
     await _refreshOcrStats();
     await _refreshVisualStats();
@@ -224,6 +226,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     setState(() {
       _backgroundEnabled = background;
       _arabicOcrEnabled = arabic;
+      _videoIndexingEnabled = videoIndexing;
     });
   }
 
@@ -694,6 +697,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  Future<Set<String>> _videoIdsForClause(SearchClause clause) async {
+    switch (clause.field) {
+      case SearchField.people:
+        return _smart.searchVideoPersonAssetIds(clause.value);
+      case SearchField.objects:
+        return _smart.searchVideoObjectAssetIds(clause.value);
+      case SearchField.general:
+        return _smart.searchVideoGeneralAssetIds(clause.value);
+      case SearchField.ocr:
+      case SearchField.colors:
+      case SearchField.scenes:
+      case SearchField.date:
+        // Smart Video Index v1 intentionally starts with objects + known
+        // people only. Unsupported video filters simply contribute no ids.
+        return const <String>{};
+    }
+  }
+
+  Future<Set<String>> _scopedIdsForClause(SearchClause clause) async {
+    switch (_scope) {
+      case SearchScope.photos:
+        return _federatedIdsForClause(clause);
+      case SearchScope.videos:
+        return _videoIdsForClause(clause);
+      case SearchScope.all:
+        final photoIds = await _federatedIdsForClause(clause);
+        final videoIds = await _videoIdsForClause(clause);
+        return <String>{...photoIds, ...videoIds};
+    }
+  }
+
   Future<List<MediaItem>> _resolveFederatedIds(Set<String> ids) async {
     if (ids.isEmpty) return const [];
 
@@ -732,17 +766,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       });
       return;
     }
-    if (_scope == SearchScope.videos) {
-      if (!mounted) return;
-      setState(() {
-        _results = [];
-        _searching = false;
-        _searchStatus =
-            'The current smart indexes cover photos; video semantic search is not wired yet.';
-      });
-      return;
-    }
-
     setState(() {
       _searching = true;
       _searchStatus = 'Searching available local indexes…';
@@ -754,7 +777,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (query.isNotEmpty) {
         final parsed = SearchQueryParser.parse(query);
         for (final clause in parsed.clauses) {
-          final clauseIds = await _federatedIdsForClause(clause);
+          final clauseIds = await _scopedIdsForClause(clause);
           if (combinedIds == null) {
             combinedIds = Set<String>.of(clauseIds);
           } else {
@@ -765,7 +788,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }
 
       if (hasPickedColor) {
-        final colorIds = await _matchingColorIds();
+        final colorIds = _scope == SearchScope.videos
+            ? const <String>{}
+            : await _matchingColorIds();
         if (combinedIds == null) {
           combinedIds = Set<String>.of(colorIds);
         } else {
@@ -781,8 +806,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         _results = items;
         _searching = false;
         _searchStatus = items.isEmpty
-            ? 'No available local index matched all selected filters.'
-            : '${items.length} local result${items.length == 1 ? '' : 's'} • using available indexes';
+            ? (_scope == SearchScope.videos
+                ? 'No indexed video matched. Smart Video Index v1 searches sampled objects and known people.'
+                : 'No available local index matched all selected filters.')
+            : '${items.length} local ${_scope == SearchScope.videos ? 'video ' : ''}result${items.length == 1 ? '' : 's'} • using available indexes';
       });
     } catch (error) {
       if (!mounted) return;
@@ -966,6 +993,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     setState(() => _arabicOcrEnabled = enabled);
     await AppPrefs.instance.setArabicOcrEnabled(enabled);
     await _refreshOcrStats();
+    await _refreshCompleteSmartIndex();
+  }
+
+  Future<void> _toggleVideoIndexing(bool enabled) async {
+    setState(() => _videoIndexingEnabled = enabled);
+    await AppPrefs.instance.setVideoIndexingEnabled(enabled);
     await _refreshCompleteSmartIndex();
   }
 
@@ -2013,11 +2046,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               _buildSmartIndexStageRow(
                 icon: Icons.psychology_alt_outlined,
                 label: 'Content understanding',
-                subtitle: 'Objects • scenes • named colors • metadata',
+                subtitle: snapshot.videoIndexingEnabled
+                    ? 'Photos: objects • scenes • colors • metadata\nVideos: sampled objects ${snapshot.safeVideoContentIndexed}/${snapshot.videoTotal}'
+                    : 'Objects • scenes • named colors • metadata • Video indexing off',
                 done: snapshot.safeContentIndexed,
                 total: total,
                 active: state.running &&
                     state.stage == CompleteSmartIndexStage.content,
+                completeOverride: snapshot.contentComplete,
               ),
               _buildSmartIndexStageRow(
                 icon: Icons.text_snippet_outlined,
@@ -2033,11 +2069,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               _buildSmartIndexStageRow(
                 icon: Icons.people_alt_outlined,
                 label: 'People',
-                subtitle: 'Face v3 • alignment • MobileFaceNet • clustering',
+                subtitle: snapshot.videoIndexingEnabled
+                    ? 'Photos: Face v3 • MobileFaceNet\nVideos: known-person matches ${snapshot.safeVideoPeopleIndexed}/${snapshot.videoTotal}'
+                    : 'Face v3 • alignment • MobileFaceNet • clustering • Video indexing off',
                 done: snapshot.safePeopleIndexed,
                 total: total,
                 active: state.running &&
                     state.stage == CompleteSmartIndexStage.people,
+                completeOverride: snapshot.peopleComplete,
               ),
               _buildSmartIndexStageRow(
                 icon: Icons.image_search_outlined,
@@ -2050,6 +2089,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 showDivider: false,
               ),
               const SizedBox(height: 10),
+              const Divider(height: 1, color: kIosSeparator),
+              IosRow(
+                icon: Icons.video_settings_outlined,
+                iconBg: AppColors.mintAccent,
+                title: 'Smart video indexing',
+                subtitle: _videoIndexingEnabled
+                    ? 'On. Samples video frames for objects and known people. Turn it off for faster photo-only indexing.'
+                    : 'Off. Complete Smart Index skips all video AI processing for a faster photo pass.',
+                showDivider: false,
+                trailing: IosSwitch(
+                  value: _videoIndexingEnabled,
+                  onChanged: (value) {
+                    if (!state.running) {
+                      unawaited(_toggleVideoIndexing(value));
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
               Text(
                 state.status,
                 style: const TextStyle(
@@ -2105,9 +2163,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     required int done,
     required int total,
     required bool active,
+    bool? completeOverride,
     bool showDivider = true,
   }) {
-    final stageComplete = total > 0 && done >= total;
+    final stageComplete = completeOverride ?? (total > 0 && done >= total);
     return Column(
       children: [
         Padding(
@@ -2488,13 +2547,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image(
-                image: AssetEntityImageProvider(
-                  item.asset,
-                  isOriginal: false,
-                  thumbnailSize: const ThumbnailSize.square(200),
-                ),
-                fit: BoxFit.cover,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image(
+                    image: AssetEntityImageProvider(
+                      item.asset,
+                      isOriginal: false,
+                      thumbnailSize: const ThumbnailSize.square(200),
+                    ),
+                    fit: BoxFit.cover,
+                  ),
+                  if (item.isVideo)
+                    const Positioned(
+                      right: 5,
+                      bottom: 5,
+                      child: Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: Colors.white,
+                        size: 21,
+                        shadows: [
+                          Shadow(color: Colors.black54, blurRadius: 4),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
           );

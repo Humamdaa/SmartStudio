@@ -114,6 +114,85 @@ class FaceService {
     return (await detectFaces(imagePath)).length;
   }
 
+  /// Matches faces from a sampled video frame against existing, stable People
+  /// clusters without creating new identities or changing photo clustering.
+  /// This keeps Smart Video Index conservative: videos can become searchable
+  /// by known people, but repeated frames never flood Face Lab with samples.
+  Future<List<PersonGroup>> matchExistingPeopleInJpeg(Uint8List jpegBytes) async {
+    if (jpegBytes.isEmpty) return const [];
+    final tempDir = await Directory.systemTemp.createTemp('pixmind_video_face_');
+    final tempFile = File('${tempDir.path}/frame.jpg');
+    try {
+      await tempFile.writeAsBytes(jpegBytes, flush: true);
+      final detectedFaces = await detectFaces(tempFile.path);
+      if (detectedFaces.isEmpty) return const [];
+
+      final decoded = img.decodeImage(jpegBytes);
+      if (decoded == null) return const [];
+      final image = img.bakeOrientation(decoded);
+      final faces = detectedFaces
+          .where((face) => _isMeaningfulIdentityFace(image, face))
+          .toList(growable: false);
+      if (faces.isEmpty) return const [];
+
+      // Only clusters already stable enough to be visible in People (or named)
+      // are allowed to label video frames. This is deliberately stricter than
+      // photo clustering because a bad video frame must never create identity
+      // drift.
+      final groups = await _database.getPersonGroupsDetailed(visibleOnly: true);
+      if (groups.isEmpty) return const [];
+      final prototypes = await _database.getPersonPrototypeEmbeddings(
+        perPerson: 5,
+        minQuality: 0.24,
+      );
+
+      final matchedIds = <String>{};
+      final matches = <PersonGroup>[];
+      for (final face in faces) {
+        final prepared = await _prepareFace(image, face);
+        if (prepared.embedding.isEmpty ||
+            prepared.qualityScore < 0.28 ||
+            prepared.poseScore < 0.30) {
+          continue;
+        }
+
+        final candidates = <_ClusterScore>[];
+        for (final person in groups) {
+          if (matchedIds.contains(person.id)) continue;
+          final score = _scoreCluster(
+            person,
+            prototypes[person.id] ?? const [],
+            prepared.embedding,
+          );
+          if (score != null) candidates.add(score);
+        }
+        candidates.sort((a, b) => b.bestScore.compareTo(a.bestScore));
+        if (candidates.isEmpty) continue;
+        final best = candidates.first;
+        final runnerUp = candidates.length > 1 ? candidates[1] : null;
+
+        // Reuse Face v3's calibrated acceptance, with the stronger frame
+        // quality guard above. No database mutation occurs here.
+        if (_acceptMatch(
+          best,
+          runnerUp,
+          faceQuality: prepared.qualityScore,
+        )) {
+          matchedIds.add(best.person.id);
+          matches.add(best.person);
+        }
+      }
+      return matches;
+    } catch (error, stackTrace) {
+      debugPrint('PixMind video face matching error: $error\n$stackTrace');
+      return const [];
+    } finally {
+      try {
+        await tempDir.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
   /// Completed Face Lab photos for the currently active face pipeline.
   /// This is persisted in SQLite, so resume works after closing the app too.
   Future<Set<String>> completedAssetIds() {

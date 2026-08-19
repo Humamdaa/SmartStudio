@@ -10,6 +10,7 @@ class AppPrefs {
   static const _keyBackgroundIndexing = 'background_indexing_enabled';
   static const _keyBackgroundFaceIndexing = 'background_face_indexing_enabled';
   static const _keyArabicOcr = 'arabic_ocr_enabled';
+  static const _keyVideoIndexing = 'smart_video_indexing_enabled';
 
   Future<SharedPreferences> get _p => SharedPreferences.getInstance();
 
@@ -48,4 +49,10 @@ class AppPrefs {
 
   Future<void> setArabicOcrEnabled(bool enabled) async =>
       (await _p).setBool(_keyArabicOcr, enabled);
+
+  Future<bool> get videoIndexingEnabled async =>
+      (await _p).getBool(_keyVideoIndexing) ?? true;
+
+  Future<void> setVideoIndexingEnabled(bool enabled) async =>
+      (await _p).setBool(_keyVideoIndexing, enabled);
 }

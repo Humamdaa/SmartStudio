@@ -7,6 +7,7 @@ import '../data/models/search_index_entry.dart';
 import '../data/repositories/media_repository.dart';
 import '../data/repositories/precise_search_repository.dart';
 import '../features/search/search_scope.dart' as precise;
+import '../features/search/search_vocabulary.dart';
 import 'gallery/background_indexer.dart';
 import 'gallery/precise_indexer.dart';
 
@@ -104,6 +105,36 @@ class SmartSearchBridge {
       limit: limit,
     );
     return ids.toSet();
+  }
+
+  Future<Set<String>> searchVideoObjectAssetIds(
+    String term, {
+    int limit = 800,
+  }) async {
+    final value = SearchVocabulary.normalize(term);
+    if (value.isEmpty) return const <String>{};
+    return (await _database.searchVideoObjectAssetIds(value, limit: limit))
+        .toSet();
+  }
+
+  Future<Set<String>> searchVideoPersonAssetIds(
+    String name, {
+    int limit = 800,
+  }) async {
+    final value = SearchVocabulary.normalize(name);
+    if (value.isEmpty) return const <String>{};
+    return (await _database.searchVideoPersonAssetIdsByName(value, limit: limit))
+        .toSet();
+  }
+
+  Future<Set<String>> searchVideoGeneralAssetIds(
+    String term, {
+    int limit = 800,
+  }) async {
+    final value = SearchVocabulary.normalize(term);
+    if (value.isEmpty) return const <String>{};
+    return (await _database.searchVideoGeneralAssetIds(value, limit: limit))
+        .toSet();
   }
 
   Future<IndexDashboardStats> stats() async {
