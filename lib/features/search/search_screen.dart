@@ -16,8 +16,8 @@ import '../../data/prefs/app_prefs.dart';
 import '../../data/repositories/media_repository.dart';
 import '../../services/smart_search_bridge.dart';
 import '../../services/gallery/complete_smart_index_service.dart';
+import '../../services/gallery/ocr_index_service.dart';
 import '../albums/indexing_providers.dart';
-import '../visual_search/visual_embedding_service.dart';
 import '../visual_search/visual_search_indexer.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -33,8 +33,8 @@ import 'text_embedding_api.dart';
 // language the USER types or speaks in — not the interface.
 //
 // Local search is federated across the indexes that already know something:
-// Face Lab supplies people, ObjectBox supplies dominant colors, while
-// YOLO/OCR/scene/date come from the heavier SQLite AI-content index. Filters
+// Face Lab supplies people, ObjectBox supplies dominant colors, the fast
+// Content index supplies YOLO/scene/date, and Text Recognition fills OCR later. Filters
 // are intersected by asset id, so a photo does not need one monolithic index
 // row to be searchable. Image similarity stays on-device; natural-language
 // descriptions use the FastAPI text-embedding service, while speech is only
@@ -87,8 +87,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   // ── نتائج البحث: text/OCR من v2.1.1، واللون من ObjectBox ─────
   final _smart = SmartSearchBridge();
+  final _ocrIndexer = OcrIndexService.instance;
   final _textEmbeddingApi = TextEmbeddingApi();
-  final _visualSearchRepository = VisualSearchRepository();
+  late final VisualSearchRepository _visualSearchRepository;
 
   int _semanticSearchRequest = 0;
   List<MediaItem> _results = [];
@@ -101,12 +102,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _cancelAiIndex = false;
   bool _backgroundEnabled = false;
   bool _arabicOcrEnabled = true;
-  String _aiStatus = 'Offline AI index is ready.';
+  String _aiStatus = 'Offline Content index is ready.';
   double? _aiProgress;
+  int _ocrIndexedCount = 0;
+  int _ocrFailedCount = 0;
+  int _ocrTotalImages = 0;
+  bool _lastOcrIndexRunning = false;
 
 
   final _mediaRepository = MediaRepository();
-  final _visualEmbeddingService = VisualEmbeddingService();
   late final VisualSearchIndexer _visualIndexer;
   late final CompleteSmartIndexService _completeSmartIndex;
   bool _lastCompleteSmartIndexRunning = false;
@@ -120,20 +124,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    _visualIndexer = VisualSearchIndexer(
-      embeddingService: _visualEmbeddingService,
-      repository: _visualSearchRepository,
-      mediaRepository: _mediaRepository,
-    );
-    _completeSmartIndex = CompleteSmartIndexService(
-      galleryIndexer: ref.read(indexingServiceProvider),
-      contentBridge: _smart,
-      visualIndexer: _visualIndexer,
-      visualRepository: _visualSearchRepository,
-      mediaRepository: _mediaRepository,
-    );
+    // v2.3.9: Smart Index ownership moved to the root ProviderScope.
+    // SearchScreen is now only a controller/view over the app-level job, so
+    // switching tabs cannot dispose the running pipeline or its visual models.
+    _visualSearchRepository = ref.read(visualSearchRepositoryProvider);
+    _visualIndexer = ref.read(visualSearchIndexerProvider);
+    _completeSmartIndex = ref.read(completeSmartIndexServiceProvider);
     _lastCompleteSmartIndexRunning = _completeSmartIndex.isRunning;
     _completeSmartIndex.progress.addListener(_onCompleteSmartIndexChanged);
+    _lastOcrIndexRunning = _ocrIndexer.isRunning;
+    _ocrIndexer.progress.addListener(_onOcrIndexChanged);
     _loadSmartState();
     _initSpeech();
   }
@@ -217,6 +217,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final background = await AppPrefs.instance.backgroundIndexingEnabled;
     final arabic = await AppPrefs.instance.arabicOcrEnabled;
     await _refreshAiStats();
+    await _refreshOcrStats();
     await _refreshVisualStats();
     await _refreshCompleteSmartIndex();
     if (!mounted) return;
@@ -232,6 +233,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (mounted) setState(() => _aiStats = value);
     } catch (_) {
       // Permission screen may still be active during first startup.
+    }
+  }
+
+  Future<void> _refreshOcrStats() async {
+    try {
+      final indexed = await _ocrIndexer.indexedCount();
+      final failed = await _ocrIndexer.failedCount();
+      final total = await _mediaRepository.getTotalCount(RequestType.image);
+      if (!mounted) return;
+      setState(() {
+        _ocrIndexedCount = indexed;
+        _ocrFailedCount = failed;
+        _ocrTotalImages = total;
+      });
+    } catch (_) {
+      // Gallery/database permission may still be pending on first startup.
     }
   }
 
@@ -261,9 +278,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final running = _completeSmartIndex.isRunning;
     if (_lastCompleteSmartIndexRunning && !running) {
       unawaited(_refreshAiStats());
+      unawaited(_refreshOcrStats());
       unawaited(_refreshVisualStats());
     }
     _lastCompleteSmartIndexRunning = running;
+  }
+
+  void _onOcrIndexChanged() {
+    final running = _ocrIndexer.isRunning;
+    if (_lastOcrIndexRunning && !running) {
+      unawaited(_refreshOcrStats());
+      unawaited(_refreshCompleteSmartIndex());
+      if (_composedQuery().isNotEmpty || _pickedColor != null) {
+        unawaited(_runIndexedSearch());
+      }
+    }
+    _lastOcrIndexRunning = running;
   }
 
   Future<void> _indexMissingVisualImages() async {
@@ -912,6 +942,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  Future<void> _indexNextOcr() async {
+    if (_ocrIndexer.isRunning || _completeSmartIndex.isRunning) return;
+    await _ocrIndexer.start(limit: 20);
+  }
+
+  Future<void> _refreshLatestOcr() async {
+    if (_ocrIndexer.isRunning || _completeSmartIndex.isRunning) return;
+    await _ocrIndexer.start(limit: 20, refreshRecent: true);
+  }
+
+  Future<void> _indexAllOcr() async {
+    if (_ocrIndexer.isRunning || _completeSmartIndex.isRunning) return;
+    await _ocrIndexer.start(limit: null);
+  }
+
   Future<void> _toggleBackgroundIndex(bool enabled) async {
     setState(() => _backgroundEnabled = enabled);
     await _smart.setBackgroundEnabled(enabled);
@@ -920,6 +965,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _toggleArabicOcr(bool enabled) async {
     setState(() => _arabicOcrEnabled = enabled);
     await AppPrefs.instance.setArabicOcrEnabled(enabled);
+    await _refreshOcrStats();
     await _refreshCompleteSmartIndex();
   }
 
@@ -977,8 +1023,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _cancelVisualIndex = true;
     _speech.cancel();
     _completeSmartIndex.progress.removeListener(_onCompleteSmartIndexChanged);
+    _ocrIndexer.progress.removeListener(_onOcrIndexChanged);
     _textEmbeddingApi.close();
-    unawaited(_visualEmbeddingService.dispose());
     _controller.dispose();
     _transcript.dispose();
     super.dispose();
@@ -1922,7 +1968,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Complete Smart Index',
+                          '5-stage Smart Index pipeline',
                           style: TextStyle(
                             color: AppColors.textPrimary,
                             fontSize: 15.5,
@@ -1931,7 +1977,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Continues only missing work; completed photos are never reprocessed.',
+                          'One coordinated pipeline; each specialized stage skips work that is already complete.',
                           style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
@@ -1966,14 +2012,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
               _buildSmartIndexStageRow(
                 icon: Icons.psychology_alt_outlined,
-                label: 'Content & text',
-                subtitle: snapshot.arabicOcrEnabled
-                    ? 'Objects • scenes • English + Arabic OCR • metadata'
-                    : 'Objects • scenes • English OCR • metadata • Arabic off',
+                label: 'Content understanding',
+                subtitle: 'Objects • scenes • named colors • metadata',
                 done: snapshot.safeContentIndexed,
                 total: total,
                 active: state.running &&
                     state.stage == CompleteSmartIndexStage.content,
+              ),
+              _buildSmartIndexStageRow(
+                icon: Icons.text_snippet_outlined,
+                label: 'Text recognition',
+                subtitle: snapshot.arabicOcrEnabled
+                    ? 'English OCR • Arabic OCR when needed'
+                    : 'English OCR • Arabic OCR off',
+                done: snapshot.safeOcrIndexed,
+                total: total,
+                active: state.running &&
+                    state.stage == CompleteSmartIndexStage.ocr,
               ),
               _buildSmartIndexStageRow(
                 icon: Icons.people_alt_outlined,
@@ -2012,7 +2067,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 )
               else
                 FilledButton.icon(
-                  onPressed: complete || _aiIndexing || _visualIndexing
+                  onPressed: complete || _aiIndexing || _ocrIndexer.isRunning || _visualIndexing
                       ? null
                       : () async {
                           await _completeSmartIndex.start();
@@ -2029,7 +2084,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
               const SizedBox(height: 8),
               const Text(
-                'Order: Gallery → Content + OCR → People → Visual. The manual Content, Face Lab and Visual controls below remain available. Background Content/People switches can continue their own stages after you leave the app.',
+                'Pipeline: Gallery → Content → Text Recognition → People → Visual. It continues across app tabs, while each stage remains independently resumable and searchable through the unified local indexes.',
                 style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 10.8,
@@ -2123,8 +2178,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Indexed ${s.indexedImages}/${s.totalImages}  •  Failed ${s.failedImages}\n'
-                  'Faces ${s.detectedFaces}  •  People ${s.people}  •  Arabic OCR ${s.arabicOcrImages}',
+                  'Content ${s.indexedImages}/${s.totalImages}  •  Failed ${s.failedImages}\n'
+                  'Objects • scenes • named colors • metadata',
                   style: const TextStyle(
                     fontSize: 12.5,
                     color: AppColors.textSecondary,
@@ -2192,27 +2247,114 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             iconBg: AppColors.mintAccent,
             title: 'Background AI indexing',
             subtitle:
-                'YOLO + Scene + OCR in small Android slices; People has a separate background switch',
-            showDivider: true,
+                'YOLO + Scene + named colors + metadata in small Android slices; OCR and People are separate stages',
+            showDivider: false,
             trailing: IosSwitch(
               value: _backgroundEnabled,
               onChanged: _toggleBackgroundIndex,
             ),
           ),
-          IosRow(
-            icon: Icons.translate_rounded,
-            iconBg: AppColors.skyBlue,
-            title: 'Arabic OCR',
-            subtitle:
-                'Offline Arabic OCR; manual/20-photo batches always run it when enabled',
-            showDivider: false,
-            trailing: IosSwitch(
-              value: _arabicOcrEnabled,
-              onChanged: _toggleArabicOcr,
-            ),
-          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildOcrIndexCard() {
+    return ValueListenableBuilder<OcrIndexProgress>(
+      valueListenable: _ocrIndexer.progress,
+      builder: (context, p, _) {
+        final complete = _ocrTotalImages > 0 && _ocrIndexedCount >= _ocrTotalImages;
+        return IosCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Text recognized $_ocrIndexedCount/$_ocrTotalImages  •  Failed $_ocrFailedCount\n'
+                      '${_arabicOcrEnabled ? 'English + optional Arabic' : 'English only • Arabic off'}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                  if (p.running)
+                    IconButton(
+                      tooltip: 'Stop after current photo',
+                      onPressed: _ocrIndexer.stop,
+                      icon: const Icon(
+                        Icons.stop_circle_outlined,
+                        color: AppColors.errorRed,
+                      ),
+                    ),
+                ],
+              ),
+              if (p.running && p.fraction != null) ...[
+                const SizedBox(height: 10),
+                LinearProgressIndicator(
+                  value: p.fraction!.clamp(0.0, 1.0),
+                  color: AppColors.navyDeep,
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                p.status,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: p.running || _completeSmartIndex.isRunning
+                        ? null
+                        : _indexNextOcr,
+                    icon: const Icon(Icons.skip_next_rounded, size: 18),
+                    label: const Text('OCR next 20'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: p.running || _completeSmartIndex.isRunning
+                        ? null
+                        : _refreshLatestOcr,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Refresh OCR latest 20'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: p.running || _completeSmartIndex.isRunning || complete
+                        ? null
+                        : _indexAllOcr,
+                    icon: const Icon(Icons.text_snippet_outlined, size: 18),
+                    label: Text(complete ? 'OCR complete' : 'Index all text'),
+                  ),
+                ],
+              ),
+              const Divider(height: 20, color: kIosSeparator),
+              IosRow(
+                icon: Icons.translate_rounded,
+                iconBg: AppColors.skyBlue,
+                title: 'Arabic OCR',
+                subtitle: _arabicOcrEnabled
+                    ? 'Enabled. Full OCR uses the text-heavy heuristic; Refresh latest 20 forces Arabic for testing.'
+                    : 'Disabled. Text Recognition runs the faster English ML Kit stage only.',
+                showDivider: false,
+                trailing: IosSwitch(
+                  value: _arabicOcrEnabled,
+                  onChanged: (value) {
+                    if (!p.running) _toggleArabicOcr(value);
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -2404,13 +2546,32 @@ class _SearchSettingsSheet extends StatefulWidget {
 
 class _SearchSettingsSheetState extends State<_SearchSettingsSheet> {
   Timer? _refreshTimer;
+  bool _statsRefreshBusy = false;
 
   @override
   void initState() {
     super.initState();
-    _refreshTimer = Timer.periodic(const Duration(milliseconds: 300), (_) {
-      if (mounted && widget.owner.mounted) setState(() {});
+    unawaited(_refreshStats());
+    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      unawaited(_refreshStats());
     });
+  }
+
+  Future<void> _refreshStats() async {
+    if (_statsRefreshBusy || !mounted || !widget.owner.mounted) return;
+    _statsRefreshBusy = true;
+    try {
+      final owner = widget.owner;
+      await Future.wait([
+        owner._refreshAiStats(),
+        owner._refreshOcrStats(),
+        owner._refreshVisualStats(),
+        owner._refreshCompleteSmartIndex(),
+      ]);
+      if (mounted) setState(() {});
+    } finally {
+      _statsRefreshBusy = false;
+    }
   }
 
   @override
@@ -2458,12 +2619,7 @@ class _SearchSettingsSheetState extends State<_SearchSettingsSheet> {
                 ),
                 IconButton(
                   tooltip: 'Refresh stats',
-                  onPressed: () async {
-                    await owner._refreshAiStats();
-                    await owner._refreshVisualStats();
-                    await owner._refreshCompleteSmartIndex();
-                    if (mounted) setState(() {});
-                  },
+                  onPressed: _statsRefreshBusy ? null : _refreshStats,
                   icon: const Icon(Icons.refresh_rounded),
                 ),
               ],
@@ -2490,6 +2646,17 @@ class _SearchSettingsSheetState extends State<_SearchSettingsSheet> {
             ),
             const SizedBox(height: 8),
             owner._buildAiIndexCard(),
+            const SizedBox(height: 22),
+            const Text(
+              'Text Recognition',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            owner._buildOcrIndexCard(),
             const SizedBox(height: 22),
             const Text(
               'Visual Index',

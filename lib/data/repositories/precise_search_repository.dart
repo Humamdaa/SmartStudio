@@ -14,6 +14,10 @@ class PreciseSearchRepository {
     return _database.saveSearchIndex(entry.toDatabase());
   }
 
+  Future<void> saveContent(SearchIndexEntry entry) {
+    return _database.upsertContentIndex(entry.toDatabase());
+  }
+
   Future<int> indexedCount() => _database.getIndexedCount();
 
   Future<Set<String>> indexedAssetIds() {

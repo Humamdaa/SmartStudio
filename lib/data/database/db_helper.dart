@@ -12,7 +12,9 @@ class DatabaseHelper {
   DatabaseHelper._();
   static final DatabaseHelper instance = DatabaseHelper._();
 
-  static const _databaseVersion = 6;
+  static const currentContentModelPrefix = 'content-v2.3.8:';
+  static const currentOcrPipelineVersion = 'ocr-v2.3.8:mlkit-latin+tesseract-ara';
+  static const _databaseVersion = 7;
   static Database? _db;
 
   Future<Database> get db async {
@@ -180,6 +182,33 @@ class DatabaseHelper {
         updated_at INTEGER NOT NULL
       )
     ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS ocr_index_state (
+        asset_id TEXT PRIMARY KEY,
+        pipeline_version TEXT NOT NULL DEFAULT '',
+        engine TEXT NOT NULL DEFAULT '',
+        arabic_enabled INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'done',
+        updated_at INTEGER NOT NULL,
+        last_error TEXT
+      )
+    ''');
+
+    // v2.3.7 and earlier stored Content + OCR as one completed row. Preserve
+    // that expensive OCR work when upgrading to the split v2.3.8 stages.
+    // New content-only rows use content-v2.3.8:* and therefore are not
+    // accidentally backfilled as OCR-complete on later app launches.
+    await database.rawInsert(
+      '''
+      INSERT OR IGNORE INTO ocr_index_state (
+        asset_id, pipeline_version, engine, arabic_enabled, status, updated_at
+      )
+      SELECT asset_id, ?, 'legacy-mlkit+tesseract', 1, 'done', indexed_at
+      FROM search_index
+      WHERE model_version LIKE 'presentation-v2.0.2:%'
+      ''',
+      [currentOcrPipelineVersion],
+    );
 
     // The APK already used early versions of these tables. Additive checks
     // keep its local index and albums intact during this upgrade.
@@ -526,6 +555,190 @@ class DatabaseHelper {
     );
   }
 
+  /// Saves only the fast Content stage while preserving OCR already extracted
+  /// by the independent Text Recognition stage. This is intentionally an
+  /// UPSERT rather than REPLACE so rerunning YOLO/scene/colors never erases
+  /// text that took much longer to recognize.
+  Future<void> upsertContentIndex(Map<String, dynamic> data) async {
+    final database = await db;
+    await database.rawInsert(
+      '''
+      INSERT INTO search_index (
+        asset_id, title, taken_at, width, height,
+        objects, scenes, colors, metadata, searchable_text,
+        people, face_count, indexed_at, model_version, last_error
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(asset_id) DO UPDATE SET
+        title = excluded.title,
+        taken_at = excluded.taken_at,
+        width = excluded.width,
+        height = excluded.height,
+        objects = excluded.objects,
+        scenes = excluded.scenes,
+        colors = excluded.colors,
+        metadata = excluded.metadata,
+        people = excluded.people,
+        face_count = excluded.face_count,
+        indexed_at = excluded.indexed_at,
+        model_version = excluded.model_version,
+        last_error = NULL
+      ''',
+      [
+        data['asset_id'],
+        data['title'],
+        data['taken_at'],
+        data['width'],
+        data['height'],
+        data['objects'],
+        data['scenes'],
+        data['colors'],
+        data['metadata'],
+        data['searchable_text'],
+        data['people'],
+        data['face_count'],
+        data['indexed_at'],
+        data['model_version'],
+      ],
+    );
+  }
+
+  /// Writes OCR independently from Content and records exactly which OCR mode
+  /// completed. The row may be created before YOLO/scene indexing; federated
+  /// search can use the text immediately and Content can safely fill the rest
+  /// later without deleting it.
+  Future<void> upsertOcrIndex({
+    required String assetId,
+    required String title,
+    required int takenAt,
+    required int width,
+    required int height,
+    required String ocrText,
+    required String ocrSearchText,
+    required String ocrScriptsJson,
+    required bool arabicEnabled,
+    required String engine,
+    String pipelineVersion = currentOcrPipelineVersion,
+  }) async {
+    final database = await db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await database.transaction((txn) async {
+      await txn.rawInsert(
+        '''
+        INSERT INTO search_index (
+          asset_id, title, taken_at, width, height,
+          ocr_text, ocr_search_text, ocr_scripts,
+          indexed_at, model_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ocr-only-v2.3.8')
+        ON CONFLICT(asset_id) DO UPDATE SET
+          title = CASE WHEN search_index.title = '' THEN excluded.title ELSE search_index.title END,
+          taken_at = CASE WHEN search_index.taken_at = 0 THEN excluded.taken_at ELSE search_index.taken_at END,
+          width = CASE WHEN search_index.width = 0 THEN excluded.width ELSE search_index.width END,
+          height = CASE WHEN search_index.height = 0 THEN excluded.height ELSE search_index.height END,
+          ocr_text = excluded.ocr_text,
+          ocr_search_text = excluded.ocr_search_text,
+          ocr_scripts = excluded.ocr_scripts,
+          indexed_at = MAX(search_index.indexed_at, excluded.indexed_at)
+        ''',
+        [
+          assetId, title, takenAt, width, height,
+          ocrText, ocrSearchText, ocrScriptsJson, now,
+        ],
+      );
+      if (ocrText.trim().isNotEmpty) {
+        await txn.rawUpdate(
+          '''
+          UPDATE search_index
+          SET metadata = TRIM(metadata || ' text document كتابة نص مستند وثيقة')
+          WHERE asset_id = ? AND metadata NOT LIKE '%text document%'
+          ''',
+          [assetId],
+        );
+      }
+      await txn.rawInsert(
+        '''
+        INSERT INTO ocr_index_state (
+          asset_id, pipeline_version, engine, arabic_enabled, status, updated_at, last_error
+        ) VALUES (?, ?, ?, ?, 'done', ?, NULL)
+        ON CONFLICT(asset_id) DO UPDATE SET
+          pipeline_version = excluded.pipeline_version,
+          engine = excluded.engine,
+          arabic_enabled = excluded.arabic_enabled,
+          status = 'done',
+          updated_at = excluded.updated_at,
+          last_error = NULL
+        ''',
+        [assetId, pipelineVersion, engine, arabicEnabled ? 1 : 0, now],
+      );
+    });
+  }
+
+  Future<void> markOcrFailed(
+    String assetId,
+    Object error, {
+    required bool arabicEnabled,
+    String pipelineVersion = currentOcrPipelineVersion,
+    String engine = 'mlkit+tesseract',
+  }) async {
+    final database = await db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await database.rawInsert(
+      '''
+      INSERT INTO ocr_index_state (
+        asset_id, pipeline_version, engine, arabic_enabled, status, updated_at, last_error
+      ) VALUES (?, ?, ?, ?, 'failed', ?, ?)
+      ON CONFLICT(asset_id) DO UPDATE SET
+        pipeline_version = excluded.pipeline_version,
+        engine = excluded.engine,
+        arabic_enabled = excluded.arabic_enabled,
+        status = 'failed',
+        updated_at = excluded.updated_at,
+        last_error = excluded.last_error
+      ''',
+      [assetId, pipelineVersion, engine, arabicEnabled ? 1 : 0, now, error.toString()],
+    );
+  }
+
+  Future<Set<String>> getOcrIndexedAssetIds({
+    required bool arabicRequired,
+    String pipelineVersion = currentOcrPipelineVersion,
+  }) async {
+    final database = await db;
+    final rows = await database.query(
+      'ocr_index_state',
+      columns: const ['asset_id'],
+      where: arabicRequired
+          ? 'pipeline_version = ? AND status = ? AND arabic_enabled = 1'
+          : 'pipeline_version = ? AND status = ?',
+      whereArgs: [pipelineVersion, 'done'],
+    );
+    return rows.map((row) => row['asset_id'] as String).toSet();
+  }
+
+  Future<int> getOcrIndexedCount({
+    required bool arabicRequired,
+    String pipelineVersion = currentOcrPipelineVersion,
+  }) async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      arabicRequired
+          ? 'SELECT COUNT(*) FROM ocr_index_state WHERE pipeline_version = ? AND status = ? AND arabic_enabled = 1'
+          : 'SELECT COUNT(*) FROM ocr_index_state WHERE pipeline_version = ? AND status = ?',
+      [pipelineVersion, 'done'],
+    );
+    return Sqflite.firstIntValue(rows) ?? 0;
+  }
+
+  Future<int> getOcrFailedCount({
+    String pipelineVersion = currentOcrPipelineVersion,
+  }) async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      'SELECT COUNT(*) FROM ocr_index_state WHERE pipeline_version = ? AND status = ?',
+      [pipelineVersion, 'failed'],
+    );
+    return Sqflite.firstIntValue(rows) ?? 0;
+  }
+
   /// Stores OCR extracted from the per-photo OCR screen in the same SQLite
   /// index used by gallery search. Existing YOLO/scene/face fields are kept.
   /// If the photo has not been AI-indexed yet, create a minimal searchable row
@@ -568,6 +781,21 @@ class DatabaseHelper {
         'manual-ocr-v1',
       ],
     );
+    await database.rawInsert(
+      '''
+      INSERT INTO ocr_index_state (
+        asset_id, pipeline_version, engine, arabic_enabled, status, updated_at, last_error
+      ) VALUES (?, ?, 'manual-current', 1, 'done', ?, NULL)
+      ON CONFLICT(asset_id) DO UPDATE SET
+        pipeline_version = excluded.pipeline_version,
+        engine = excluded.engine,
+        arabic_enabled = 1,
+        status = 'done',
+        updated_at = excluded.updated_at,
+        last_error = NULL
+      ''',
+      [assetId, currentOcrPipelineVersion, now],
+    );
   }
 
   Future<bool> hasSearchIndex(String assetId) async {
@@ -604,7 +832,7 @@ class DatabaseHelper {
     final rows = await database.query(
       'search_index',
       columns: const ['asset_id'],
-      where: "model_version LIKE 'presentation-v2.0.2:%'",
+      where: "model_version LIKE 'presentation-v2.0.2:%' OR model_version LIKE 'content-v2.3.8:%'",
     );
     return rows.map((row) => row['asset_id'] as String).toSet();
   }
@@ -615,7 +843,7 @@ class DatabaseHelper {
   Future<int> getPresentationIndexedCount() async {
     final database = await db;
     final rows = await database.rawQuery(
-      "SELECT COUNT(*) FROM search_index WHERE model_version LIKE 'presentation-v2.0.2:%'",
+      "SELECT COUNT(*) FROM search_index WHERE model_version LIKE 'presentation-v2.0.2:%' OR model_version LIKE 'content-v2.3.8:%'",
     );
     return Sqflite.firstIntValue(rows) ?? 0;
   }
@@ -699,6 +927,7 @@ class DatabaseHelper {
     final database = await db;
     await database.transaction((txn) async {
       await txn.delete('search_index');
+      await txn.delete('ocr_index_state');
       await txn.delete('index_queue');
       await txn.delete('face_instances');
       await txn.delete('face_scans');
@@ -1983,7 +2212,7 @@ class DatabaseHelper {
     final database = await db;
     final rows = await database.rawQuery('''
       SELECT
-        (SELECT COUNT(*) FROM search_index) AS indexed_images,
+        (SELECT COUNT(*) FROM search_index WHERE model_version LIKE 'presentation-v2.0.2:%' OR model_version LIKE 'content-v2.3.8:%') AS indexed_images,
         (SELECT COUNT(*) FROM index_queue WHERE state IN ('pending', 'processing')) AS queued_images,
         (SELECT COUNT(*) FROM index_queue WHERE state = 'failed') AS failed_images,
         (SELECT COALESCE(SUM(face_count), 0) FROM face_scans) AS detected_faces,
