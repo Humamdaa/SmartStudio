@@ -18,7 +18,7 @@ import '../favorites/favorites_controller.dart';
 import '../secure/secure_screen.dart';
 import '../albums/album_picker_sheet.dart';
 import '../people/photo_people_sheet.dart';
-import '../people/face_sticker_sheet.dart';
+
 // ═══════════════════════════════════════════════════════════════
 // DetailScreen
 //
@@ -92,14 +92,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // تهيئة فيديو بـ index معين
   // نسبق ونهيئ الفيديو التالي/السابق أيضاً (prefetch)
   // ─────────────────────────────────────────
-  Future<void> _openFaceSticker() async {
-  if (_current.isVideo) return;
-  await showFaceStickerSheet(
-    context: context,
-    item: _current,
-  );
-}
-
   Future<void> _prepareVideoAt(int index) async {
     final item = widget.allItems[index];
     if (!item.isVideo) return;
@@ -458,9 +450,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       case 'move':
         _pickAlbum(move: true);
         break;
-        case 'faceSticker':
-  await _openFaceSticker();
-  break;
     }
   }
 }
@@ -817,12 +806,6 @@ class _OptionsSheet extends StatelessWidget {
             label: 'People in Photo',
             action: 'people',
           ),
-          if (!isVideo)
-  const _Opt(
-    icon: Icons.emoji_emotions_outlined,
-    label: 'Face Sticker',
-    action: 'faceSticker',
-  ),
         const _Opt(
           icon: Icons.copy_all_outlined,
           label: 'Copy to Album',

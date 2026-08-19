@@ -29,6 +29,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
   int _rebuildProcessed = 0;
   int _rebuildTotal = 0;
   int _rebuildFailed = 0;
+  int _rebuildDetected = 0;
+  int _rebuildIgnored = 0;
   String? _rebuildStatus;
 
   @override
@@ -164,15 +166,52 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   Future<void> _startFaceRebuild() async {
     if (_rebuilding) return;
+    final limit = await showDialog<int?>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('Face Lab v3 — متابعة ذكية'),
+          content: const Text(
+            'فهرسة الوجوه تحفظ تقدمها تلقائيًا. الصور التي اكتملت بنفس إصدار '
+            'Face v3 لن يعاد تحليلها عند الضغط مرة ثانية أو بعد إعادة فتح التطبيق. '
+            'يمكنك معالجة 20 صورة جديدة فقط أو إكمال كل الصور المتبقية. '
+            'لن يعاد YOLO أو OCR أو فهرس البحث البصري.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context, 20),
+              icon: const Icon(Icons.skip_next_rounded),
+              label: const Text('20 التالية'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, -1),
+              icon: const Icon(Icons.playlist_add_check_circle_rounded),
+              label: const Text('إكمال كل الصور'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (limit == null) return;
+    await _runFaceRebuild(limit: limit < 0 ? null : limit);
+  }
+
+  Future<void> _runFaceRebuild({int? limit}) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Text('إعادة بناء ألبومات الأشخاص؟'),
-          content: const Text(
-            'سيعاد تشغيل مرحلة الوجوه فقط على الصور المفهرسة باستخدام المحاذاة والتجميع الجديد. '
-            'لن يعاد YOLO أو OCR. سنحافظ على الأسماء التي سميتها قدر الإمكان.',
+          title: Text(limit == 20 ? 'فهرسة 20 صورة جديدة؟' : 'إكمال فهرسة الوجوه؟'),
+          content: Text(
+            limit == 20
+                ? 'سيتم تخطي كل صورة اكتملت سابقًا بـFace v3 ومعالجة 20 صورة غير مفهرسة فقط، بدءًا من الأحدث. التقدم محفوظ حتى لو أوقفت العملية.'
+                : 'سيتم تخطي كل الصور المكتملة سابقًا ومتابعة الصور غير المفهرسة فقط حتى نهاية المكتبة. التقدم محفوظ حتى بعد إغلاق التطبيق. لا يتم تشغيل YOLO أو OCR.',
           ),
           actions: [
             TextButton(
@@ -181,7 +220,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('ابدأ'),
+              child: const Text('متابعة'),
             ),
           ],
         ),
@@ -193,78 +232,154 @@ class _PeopleScreenState extends State<PeopleScreen> {
       _rebuilding = true;
       _cancelRebuild = false;
       _rebuildProcessed = 0;
-      _rebuildTotal = 0;
+      _rebuildTotal = limit ?? 0;
       _rebuildFailed = 0;
-      _rebuildStatus = 'تجهيز إعادة بناء الأشخاص…';
+      _rebuildDetected = 0;
+      _rebuildIgnored = 0;
+      _rebuildStatus = 'تجهيز Face Lab v3 واستعادة التقدم…';
     });
 
     try {
-      final ids = await _repository.indexedAssetIdsForFaceRebuild();
-      await _repository.resetForFaceRebuild(preserveNamed: true);
-      if (!mounted) return;
-      setState(() => _rebuildTotal = ids.length);
+      final permission = await PhotoManager.requestPermissionExtend();
+      if (!permission.isAuth) {
+        throw StateError('لا يوجد إذن للوصول إلى الصور.');
+      }
+      final paths = await PhotoManager.getAssetPathList(
+        type: RequestType.image,
+        onlyAll: true,
+      );
+      if (paths.isEmpty) {
+        throw StateError('لا توجد صور متاحة للتحليل.');
+      }
+      final album = paths.first;
+      final libraryTotal = await album.assetCountAsync;
 
-      for (var index = 0; index < ids.length; index++) {
-        if (_cancelRebuild || !mounted) break;
-        if (index % 4 == 0) {
-          final gate = await DeviceHealthService.instance.canContinueIndexing(
-            checkLowBattery: false,
-            checkThermal: true,
-          );
-          if (!gate.allowed) {
-            setState(() => _rebuildStatus = gate.reason);
+      // One lightweight SQLite query restores persistent progress. We then
+      // skip these ids while paging through the gallery; image bytes are never
+      // opened for already-completed photos.
+      final completedIds = await FaceService.instance.completedAssetIds();
+      final estimatedRemaining =
+          (libraryTotal - completedIds.length).clamp(0, libraryTotal).toInt();
+      // The database may still contain ids for photos deleted from the device,
+      // so this number is only a UI estimate. The actual stop condition below
+      // is based on finding 20 new photos or physically reaching gallery end.
+      final displayTarget = limit ?? estimatedRemaining;
+
+      if (!mounted) return;
+      setState(() {
+        _rebuildTotal = displayTarget;
+        _rebuildStatus =
+            'متبقٍ تقريبًا $estimatedRemaining صورة للوجوه؛ جاري التحقق من المكتبة…';
+      });
+
+      const pageSize = 60;
+      var page = 0;
+      var reachedLibraryEnd = false;
+      while ((limit == null || _rebuildProcessed < limit) &&
+          !_cancelRebuild &&
+          mounted) {
+        final assets = await album.getAssetListPaged(page: page, size: pageSize);
+        if (assets.isEmpty) {
+          reachedLibraryEnd = true;
+          break;
+        }
+        page++;
+
+        for (final asset in assets) {
+          if (_cancelRebuild ||
+              !mounted ||
+              (limit != null && _rebuildProcessed >= limit)) {
             break;
           }
-        }
 
-        final asset = await AssetEntity.fromId(ids[index]);
-        if (asset == null) {
+          // This is the key resume rule: an already-complete photo costs no
+          // face detection, image decode, alignment, or MobileFaceNet pass.
+          if (completedIds.contains(asset.id)) continue;
+
+          if (_rebuildProcessed % 4 == 0) {
+            final gate = await DeviceHealthService.instance.canContinueIndexing(
+              checkLowBattery: false,
+              checkThermal: true,
+            );
+            if (!gate.allowed) {
+              setState(() => _rebuildStatus = gate.reason);
+              _cancelRebuild = true;
+              break;
+            }
+          }
+
+          final file = await asset.file;
+          if (file == null) {
+            _rebuildProcessed++;
+            _rebuildFailed++;
+            continue;
+          }
+          if (mounted) {
+            setState(() {
+              _rebuildStatus = limit == null
+                  ? 'Face Lab فقط: ${asset.title ?? 'صورة'}  '
+                        '${_rebuildProcessed + 1} صورة جديدة'
+                  : 'Face Lab فقط: ${asset.title ?? 'صورة'}  '
+                        '${_rebuildProcessed + 1}/$limit';
+            });
+          }
+          try {
+            final result = await FaceService.instance.analyzeAndStore(
+              assetId: asset.id,
+              imagePath: file.path,
+              // Do not force a rerun. Old/partial pipeline rows are still
+              // reprocessed automatically by FaceService itself.
+              force: false,
+            );
+            _rebuildDetected += result.detectedFaceCount;
+            _rebuildIgnored += result.ignoredFaceCount;
+          } catch (error, stackTrace) {
+            _rebuildFailed++;
+            debugPrint('PixMind Face Lab ${asset.id}: $error\n$stackTrace');
+          }
           _rebuildProcessed++;
-          continue;
-        }
-        final file = await asset.file;
-        if (file == null) {
-          _rebuildProcessed++;
-          continue;
-        }
-        if (mounted) {
-          setState(() {
-            _rebuildStatus = 'تحليل الوجوه فقط: ${asset.title ?? 'صورة'}';
-          });
-        }
-        try {
-          await FaceService.instance.analyzeAndStore(
-            assetId: asset.id,
-            imagePath: file.path,
-          );
-        } catch (error, stackTrace) {
-          _rebuildFailed++;
-          debugPrint('PixMind people rebuild ${asset.id}: $error\n$stackTrace');
-        }
-        _rebuildProcessed++;
-        if (_rebuildProcessed % 20 == 0) {
-          await FaceService.instance.refineClusters(maxMerges: 12);
-          await _reload();
-        } else if (mounted) {
-          setState(() {});
+
+          if (_rebuildProcessed % 20 == 0) {
+            // Global refinement uses stored embeddings only; no inference is
+            // repeated here.
+            await FaceService.instance.refineClusters(maxMerges: 80);
+            await _reload();
+          } else if (mounted) {
+            setState(() {});
+          }
         }
       }
 
-      if (!_cancelRebuild) {
-        await FaceService.instance.refineClusters(maxMerges: 40);
+      // If stale database ids made the initial estimate slightly optimistic,
+      // make the progress bar finish honestly at the amount actually found.
+      if (reachedLibraryEnd && _rebuildProcessed < _rebuildTotal && mounted) {
+        setState(() => _rebuildTotal = _rebuildProcessed);
+      }
+
+      if (!_cancelRebuild && _rebuildProcessed > 0) {
+        await FaceService.instance.refineClusters(maxMerges: 160);
       }
       await _reload();
       if (mounted) {
         setState(() {
-          _rebuildStatus = _cancelRebuild
-              ? 'تم إيقاف إعادة البناء. يمكنك تشغيلها لاحقًا من جديد.'
-              : 'اكتملت إعادة بناء الأشخاص. تعذر $_rebuildFailed صورة.';
+          if (_cancelRebuild) {
+            _rebuildStatus =
+                'تم إيقاف Face Lab بعد $_rebuildProcessed صورة. التقدم محفوظ؛ المرة القادمة سيكمل من الصور غير المفهرسة.';
+          } else if (_rebuildProcessed == 0) {
+            _rebuildStatus = 'كل الصور الحالية مفهرسة للوجوه بالفعل.';
+          } else {
+            _rebuildStatus =
+                'اكتمل Face Lab: عالج $_rebuildProcessed صورة جديدة، '
+                'كشف $_rebuildDetected وجهًا وتجاهل $_rebuildIgnored وجهًا بعيدًا/ضعيفًا. '
+                'تعذر $_rebuildFailed صورة. الضغط مرة أخرى سيبدأ من الصور المتبقية.';
+          }
         });
       }
     } catch (error, stackTrace) {
-      debugPrint('PixMind people rebuild failed: $error\n$stackTrace');
-      if (mounted)
-        setState(() => _rebuildStatus = 'تعذرت إعادة البناء: $error');
+      debugPrint('PixMind Face Lab failed: $error\n$stackTrace');
+      if (mounted) {
+        setState(() => _rebuildStatus = 'تعذر Face Lab: $error');
+      }
     } finally {
       if (mounted) setState(() => _rebuilding = false);
     }
@@ -284,7 +399,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
           actions: [
             IconButton(
               onPressed: _rebuilding ? null : _startFaceRebuild,
-              tooltip: 'إعادة بناء الأشخاص بالمحرك الجديد',
+              tooltip: 'Face Lab v3 — اختبار الوجوه فقط',
               icon: const Icon(Icons.face_retouching_natural),
             ),
             IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
@@ -298,6 +413,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
               processed: _rebuildProcessed,
               total: _rebuildTotal,
               failed: _rebuildFailed,
+              detected: _rebuildDetected,
+              ignored: _rebuildIgnored,
               status: _rebuildStatus,
               onStop: _rebuilding
                   ? () => setState(() => _cancelRebuild = true)
@@ -379,6 +496,8 @@ class _PeopleInfoBanner extends StatelessWidget {
   final int processed;
   final int total;
   final int failed;
+  final int detected;
+  final int ignored;
   final String? status;
   final VoidCallback? onStop;
   final VoidCallback? onRebuild;
@@ -389,6 +508,8 @@ class _PeopleInfoBanner extends StatelessWidget {
     required this.processed,
     required this.total,
     required this.failed,
+    required this.detected,
+    required this.ignored,
     required this.status,
     required this.onStop,
     required this.onRebuild,
@@ -428,7 +549,7 @@ class _PeopleInfoBanner extends StatelessWidget {
               child: FilledButton.tonalIcon(
                 onPressed: onRebuild,
                 icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
-                label: const Text('إعادة بناء الأشخاص بمحرك v2.1'),
+                label: const Text('Face Lab v3 — وجوه فقط'),
               ),
             ),
           ],
@@ -447,7 +568,7 @@ class _PeopleInfoBanner extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    '$processed/$total  •  تعذر: $failed',
+                    '$processed/$total  •  كشف: $detected  •  تجاهل بعيد/ضعيف: $ignored  •  تعذر: $failed',
                     style: const TextStyle(fontSize: 11),
                   ),
                   const Spacer(),

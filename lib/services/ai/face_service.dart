@@ -13,19 +13,33 @@ import '../../data/models/person_group.dart';
 import '../../features/search/search_vocabulary.dart';
 
 class FaceAnalysisResult {
+  /// Faces considered useful enough to participate in identity clustering.
   final int faceCount;
   final List<PersonGroup> people;
 
-  const FaceAnalysisResult({required this.faceCount, required this.people});
+  /// Raw ML Kit detections before the gallery-identity quality filter.
+  final int detectedFaceCount;
+
+  /// Tiny/background/landmark-poor detections intentionally ignored for
+  /// People albums. Keeping this separate makes Face Lab diagnostics useful.
+  final int ignoredFaceCount;
+
+  const FaceAnalysisResult({
+    required this.faceCount,
+    required this.people,
+    this.detectedFaceCount = 0,
+    this.ignoredFaceCount = 0,
+  });
 }
 
-/// Offline People Intelligence v2.1.
+/// Offline People Intelligence v3 experimental.
 ///
-/// Improvements over the first MVP:
-/// - roll-aware face alignment before MobileFaceNet
+/// Face Lab runs independently from the heavy AI index while we calibrate
+/// recognition. Improvements over the first MVP:
+/// - canonical landmark alignment before MobileFaceNet, with roll-crop fallback
 /// - a quality score for covers/prototypes
 /// - several representative embeddings per person, not one drifting centroid
-/// - conservative matching with a runner-up margin
+/// - calibrated matching with a runner-up margin and global refinement
 /// - never maps two different faces in the same photo to the same cluster
 /// - a conservative post-pass that can merge duplicate unnamed clusters
 /// - stores every face embedding so clusters can be rebuilt without YOLO/OCR
@@ -33,19 +47,19 @@ class FaceService {
   FaceService._();
   static final FaceService instance = FaceService._();
 
-  static const facePipelineVersion = 'faces-v2.2.4-named-anchor-1';
+  static const facePipelineVersion = 'faces-v3.0-aligned-global-1';
   static const _modelAsset = 'assets/models/mobilefacenet.tflite';
 
   // These are deliberately conservative. A grey-zone face becomes a hidden
   // candidate instead of contaminating an existing person album.
-  static const _baseStrongThreshold = 0.73;
+  static const _baseStrongThreshold = 0.67;
   // A user-named cluster is a stronger identity anchor, so allow a slightly
   // more permissive strong match while still requiring the quality guard and
   // runner-up margin. This mainly helps the second/third photo inherit a name.
-  static const _namedStrongThreshold = 0.72;
-  static const _supportedThreshold = 0.695;
-  static const _runnerUpMargin = 0.028;
-  static const _prototypeSupportThreshold = 0.655;
+  static const _namedStrongThreshold = 0.65;
+  static const _supportedThreshold = 0.615;
+  static const _runnerUpMargin = 0.018;
+  static const _prototypeSupportThreshold = 0.585;
 
   final DatabaseHelper _database = DatabaseHelper.instance;
   final FaceDetector _detector = FaceDetector(
@@ -87,6 +101,12 @@ class FaceService {
     return (await detectFaces(imagePath)).length;
   }
 
+  /// Completed Face Lab photos for the currently active face pipeline.
+  /// This is persisted in SQLite, so resume works after closing the app too.
+  Future<Set<String>> completedAssetIds() {
+    return _database.getCompletedFaceScanAssetIds(facePipelineVersion);
+  }
+
   Future<FaceAnalysisResult> analyzeAndStore({
     required String assetId,
     required String imagePath,
@@ -122,7 +142,11 @@ class FaceService {
       final storedFaces = await _database.getFaceInstanceCount(assetId);
       if (faceCount == 0 || storedFaces >= faceCount) {
         final people = await _database.getPeopleForAsset(assetId);
-        return FaceAnalysisResult(faceCount: faceCount, people: people);
+        return FaceAnalysisResult(
+          faceCount: faceCount,
+          people: people,
+          detectedFaceCount: faceCount,
+        );
       }
     }
 
@@ -132,13 +156,14 @@ class FaceService {
       await _database.prepareAssetFaceReanalysis(assetId);
     }
 
-    final faces = await detectFaces(imagePath);
-    if (faces.isEmpty) {
+    final detectedFaces = await detectFaces(imagePath);
+    if (detectedFaces.isEmpty) {
       await _database.markFaceScanned(
         assetId,
         0,
         pipelineVersion: facePipelineVersion,
       );
+      await _database.updateSearchFaceSummary(assetId);
       return const FaceAnalysisResult(faceCount: 0, people: []);
     }
 
@@ -151,6 +176,30 @@ class FaceService {
     // ML Kit honors camera orientation. Baking EXIF makes our crop coordinates
     // agree with the visual orientation used by the detector on most phones.
     final image = img.bakeOrientation(decoded);
+
+    // Detection and recognition serve different goals. ML Kit may detect tiny
+    // background heads correctly, but creating a People identity from a face
+    // that occupies only a few pixels is harmful. Keep only meaningful faces
+    // for identity clustering while reporting the raw detector count in Face
+    // Lab diagnostics.
+    final faces = detectedFaces
+        .where((face) => _isMeaningfulIdentityFace(image, face))
+        .toList(growable: false);
+    final ignoredFaceCount = detectedFaces.length - faces.length;
+    if (faces.isEmpty) {
+      await _database.markFaceScanned(
+        assetId,
+        0,
+        pipelineVersion: facePipelineVersion,
+      );
+      await _database.updateSearchFaceSummary(assetId);
+      return FaceAnalysisResult(
+        faceCount: 0,
+        people: const [],
+        detectedFaceCount: detectedFaces.length,
+        ignoredFaceCount: ignoredFaceCount,
+      );
+    }
 
     final rejectedPersonIds = await _database.getRejectedPersonIds(assetId);
     final assignedPersonIds = <String>{};
@@ -206,7 +255,7 @@ class FaceService {
       // person's cluster automatically. False splits are much easier to fix
       // than two different people being merged into one album.
       final canAutoMatch =
-          prepared.qualityScore >= 0.30 && prepared.poseScore >= 0.35;
+          prepared.qualityScore >= 0.25 && prepared.poseScore >= 0.28;
       final matched =
           canAutoMatch &&
           best != null &&
@@ -275,12 +324,18 @@ class FaceService {
           ? facePipelineVersion
           : 'partial:$facePipelineVersion',
     );
+    await _database.updateSearchFaceSummary(assetId);
 
     final people = await _database.getPeopleForAsset(assetId);
     if (embeddingFailures > 0 && people.isEmpty) {
       throw StateError(lastError ?? 'تعذرت بصمة الوجه');
     }
-    return FaceAnalysisResult(faceCount: faces.length, people: people);
+    return FaceAnalysisResult(
+      faceCount: faces.length,
+      people: people,
+      detectedFaceCount: detectedFaces.length,
+      ignoredFaceCount: ignoredFaceCount,
+    );
   }
 
   _ClusterScore? _scoreCluster(
@@ -330,56 +385,65 @@ class FaceService {
     // Very strong identity evidence can stand alone. Otherwise ask for two
     // supporting representatives and a clear lead over the next person.
     if (best.bestScore >= strongThreshold &&
-        (margin >= _runnerUpMargin || best.bestScore >= 0.82)) {
+        (margin >= _runnerUpMargin || best.bestScore >= 0.78)) {
       return true;
     }
     final supported =
         best.bestScore >= _supportedThreshold + lowQualityPenalty &&
         best.supportCount >= 2 &&
         best.supportAverage >= _prototypeSupportThreshold &&
-        margin >= _runnerUpMargin + 0.01;
+        margin >= _runnerUpMargin + 0.006;
     return supported;
   }
 
   Future<_PreparedFace> _prepareFace(img.Image image, Face face) async {
     final rect = face.boundingBox;
-    final cx = (rect.left + rect.right) / 2;
-    final cy = (rect.top + rect.bottom) / 2;
-    final side = math.max(rect.width, rect.height) * 1.55;
-    if (side < 2 || image.width < 1 || image.height < 1) {
-      return _PreparedFace(
-        embedding: const [],
-        coverJpeg: Uint8List(0),
-        qualityScore: 0,
-        poseScore: 0,
-      );
-    }
-
-    final left = (cx - side / 2).round().clamp(0, image.width - 1).toInt();
-    final top = (cy - side / 2).round().clamp(0, image.height - 1).toInt();
-    final width = side.round().clamp(1, image.width - left).toInt();
-    final height = side.round().clamp(1, image.height - top).toInt();
-    var cropped = img.copyCrop(
-      image,
-      x: left,
-      y: top,
-      width: width,
-      height: height,
-    );
-
-    // Prefer the actual eye line when both ML Kit landmarks are available.
-    // Euler roll remains the fallback for small/partially occluded faces.
     final roll = _alignmentRoll(face).clamp(-45.0, 45.0).toDouble();
-    if (roll.abs() >= 1.5) {
-      cropped = img.copyRotate(cropped, angle: -roll);
+
+    // Prefer a canonical landmark warp. MobileFaceNet is much more stable when
+    // the eyes/nose land in consistent locations instead of feeding a merely
+    // square crop whose geometry changes with pose and detector jitter.
+    var modelImage = _alignByLandmarks(image, face);
+    img.Image coverImage;
+
+    if (modelImage != null) {
+      coverImage = img.copyResize(modelImage, width: 160, height: 160);
+    } else {
+      // Fallback for partial/occluded faces where landmarks are unavailable.
+      final cx = (rect.left + rect.right) / 2;
+      final cy = (rect.top + rect.bottom) / 2;
+      final side = math.max(rect.width, rect.height) * 1.62;
+      if (side < 2 || image.width < 1 || image.height < 1) {
+        return _PreparedFace(
+          embedding: const [],
+          coverJpeg: Uint8List(0),
+          qualityScore: 0,
+          poseScore: 0,
+        );
+      }
+
+      final left = (cx - side / 2).round().clamp(0, image.width - 1).toInt();
+      final top = (cy - side / 2).round().clamp(0, image.height - 1).toInt();
+      final width = side.round().clamp(1, image.width - left).toInt();
+      final height = side.round().clamp(1, image.height - top).toInt();
+      var cropped = img.copyCrop(
+        image,
+        x: left,
+        y: top,
+        width: width,
+        height: height,
+      );
+      if (roll.abs() >= 1.5) {
+        cropped = img.copyRotate(cropped, angle: -roll);
+      }
+      coverImage = img.copyResizeCropSquare(cropped, size: 160);
+      modelImage = img.copyResize(coverImage, width: 112, height: 112);
     }
 
-    final aligned = img.copyResizeCropSquare(cropped, size: 160);
-    final modelImage = img.copyResize(aligned, width: 112, height: 112);
     final input = List.generate(1, (_) {
       return List.generate(112, (y) {
         return List.generate(112, (x) {
-          final pixel = modelImage.getPixel(x, y);
+          final pixel = modelImage!.getPixel(x, y);
           return <double>[
             pixel.r.toDouble() / 127.5 - 1,
             pixel.g.toDouble() / 127.5 - 1,
@@ -396,7 +460,7 @@ class FaceService {
     interpreter.run(input, output);
 
     final yaw = (face.headEulerAngleY ?? 0.0).abs();
-    final poseScore = (1.0 - ((yaw / 50.0) * 0.62 + (roll.abs() / 40.0) * 0.38))
+    final poseScore = (1.0 - ((yaw / 55.0) * 0.60 + (roll.abs() / 45.0) * 0.40))
         .clamp(0.0, 1.0)
         .toDouble();
     final areaRatio =
@@ -404,18 +468,125 @@ class FaceService {
     final sizeScore = ((math.sqrt(areaRatio) - 0.055) / 0.23)
         .clamp(0.0, 1.0)
         .toDouble();
-    final visualScore = _visualFaceQuality(aligned);
+    final visualScore = _visualFaceQuality(coverImage);
     final qualityScore =
-        (sizeScore * 0.45 + poseScore * 0.35 + visualScore * 0.20)
+        (sizeScore * 0.42 + poseScore * 0.33 + visualScore * 0.25)
             .clamp(0.0, 1.0)
             .toDouble();
 
     return _PreparedFace(
       embedding: _normalize(output.first),
-      coverJpeg: img.encodeJpg(aligned, quality: 84),
+      coverJpeg: img.encodeJpg(coverImage, quality: 86),
       qualityScore: qualityScore,
       poseScore: poseScore,
     );
+  }
+
+  bool _isMeaningfulIdentityFace(img.Image image, Face face) {
+    final rect = face.boundingBox;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    final minPixelSide = math.min(rect.width, rect.height);
+    final areaRatio =
+        (rect.width * rect.height) / math.max(1, image.width * image.height);
+    final normalizedWidth = rect.width / math.max(1, image.width);
+    final normalizedHeight = rect.height / math.max(1, image.height);
+    final yaw = (face.headEulerAngleY ?? 0.0).abs();
+
+    final leftEye = face.landmarks[FaceLandmarkType.leftEye]?.position;
+    final rightEye = face.landmarks[FaceLandmarkType.rightEye]?.position;
+    final nose = face.landmarks[FaceLandmarkType.noseBase]?.position;
+    final hasUsefulLandmarks = leftEye != null && rightEye != null && nose != null;
+
+    // The detector is intentionally allowed to see smaller faces than the
+    // identity pipeline accepts. This prevents distant background heads from
+    // becoming Person 1/2/3 while retaining normal group-photo faces.
+    if (minPixelSide < 64) return false;
+    if (areaRatio < 0.0032) return false;
+    if (normalizedWidth < 0.065 && normalizedHeight < 0.085) return false;
+    if (yaw > 62) return false;
+    if (!hasUsefulLandmarks && minPixelSide < 96) return false;
+    return true;
+  }
+
+  img.Image? _alignByLandmarks(img.Image image, Face face) {
+    final eyeA = face.landmarks[FaceLandmarkType.leftEye]?.position;
+    final eyeB = face.landmarks[FaceLandmarkType.rightEye]?.position;
+    final nose = face.landmarks[FaceLandmarkType.noseBase]?.position;
+    if (eyeA == null || eyeB == null || nose == null) return null;
+
+    // Sort by image X so semantic left/right naming cannot accidentally mirror
+    // the face. The destination points follow the standard 112px ArcFace-style
+    // geometry commonly used by MobileFaceNet checkpoints.
+    final firstEye = eyeA.x <= eyeB.x ? eyeA : eyeB;
+    final secondEye = eyeA.x <= eyeB.x ? eyeB : eyeA;
+    final dx = (secondEye.x - firstEye.x).toDouble();
+    final dy = (secondEye.y - firstEye.y).toDouble();
+    if (math.sqrt(dx * dx + dy * dy) < 12) return null;
+
+    final destination = <_FacePoint>[
+      const _FacePoint(38.2946, 51.6963),
+      const _FacePoint(73.5318, 51.5014),
+      const _FacePoint(56.0252, 71.7366),
+    ];
+    final source = <_FacePoint>[
+      _FacePoint(firstEye.x.toDouble(), firstEye.y.toDouble()),
+      _FacePoint(secondEye.x.toDouble(), secondEye.y.toDouble()),
+      _FacePoint(nose.x.toDouble(), nose.y.toDouble()),
+    ];
+    final affine = _solveAffine(destination, source);
+    if (affine == null) return null;
+
+    final output = img.Image(width: 112, height: 112, numChannels: 3);
+    for (var y = 0; y < 112; y++) {
+      for (var x = 0; x < 112; x++) {
+        final sx = affine.a * x + affine.b * y + affine.c;
+        final sy = affine.d * x + affine.e * y + affine.f;
+        if (sx < 0 || sy < 0 || sx >= image.width - 1 || sy >= image.height - 1) {
+          output.setPixelRgb(x, y, 0, 0, 0);
+          continue;
+        }
+        final pixel = image.getPixelInterpolate(
+          sx,
+          sy,
+          interpolation: img.Interpolation.linear,
+        );
+        output.setPixelRgb(x, y, pixel.r, pixel.g, pixel.b);
+      }
+    }
+    return output;
+  }
+
+  _AffineMap? _solveAffine(List<_FacePoint> from, List<_FacePoint> to) {
+    if (from.length != 3 || to.length != 3) return null;
+    final x1 = from[0].x;
+    final y1 = from[0].y;
+    final x2 = from[1].x;
+    final y2 = from[1].y;
+    final x3 = from[2].x;
+    final y3 = from[2].y;
+    final determinant =
+        x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2);
+    if (determinant.abs() < 1e-6) return null;
+
+    List<double> coefficients(double z1, double z2, double z3) {
+      final a =
+          (z1 * (y2 - y3) + z2 * (y3 - y1) + z3 * (y1 - y2)) /
+          determinant;
+      final b =
+          (z1 * (x3 - x2) + z2 * (x1 - x3) + z3 * (x2 - x1)) /
+          determinant;
+      final c =
+          (z1 * (x2 * y3 - x3 * y2) +
+              z2 * (x3 * y1 - x1 * y3) +
+              z3 * (x1 * y2 - x2 * y1)) /
+          determinant;
+      return [a, b, c];
+    }
+
+    final cx = coefficients(to[0].x, to[1].x, to[2].x);
+    final cy = coefficients(to[0].y, to[1].y, to[2].y);
+    return _AffineMap(cx[0], cx[1], cx[2], cy[0], cy[1], cy[2]);
   }
 
   double _visualFaceQuality(img.Image image) {
@@ -502,7 +673,7 @@ class FaceService {
           // keeps refinement practical when a gallery has many one-photo
           // candidate clusters.
           final centroidScore = _cosine(first.centroid, second.centroid);
-          final prefilter = first.isNamed || second.isNamed ? 0.64 : 0.60;
+          final prefilter = first.isNamed || second.isNamed ? 0.57 : 0.54;
           if (centroidScore < prefilter) continue;
           if (await _database.peopleShareAnyAsset(first.id, second.id)) {
             continue;
@@ -522,17 +693,17 @@ class FaceService {
               ? (crossScores[0] + crossScores[1]) / 2
               : bestCross;
 
-          final threshold = first.isNamed || second.isNamed ? 0.805 : 0.765;
+          final threshold = first.isNamed || second.isNamed ? 0.72 : 0.685;
           final sameNamed =
               first.isNamed &&
               second.isNamed &&
               first.searchName == second.searchName &&
               first.searchName.isNotEmpty;
           final accepted = sameNamed
-              ? bestCross >= 0.73 && centroidScore >= 0.66
+              ? bestCross >= 0.62 && centroidScore >= 0.56
               : bestCross >= threshold &&
-                    centroidScore >= threshold - 0.075 &&
-                    topTwoAverage >= threshold - 0.035;
+                    centroidScore >= threshold - 0.09 &&
+                    topTwoAverage >= threshold - 0.055;
           if (!accepted) continue;
 
           final combined =
@@ -603,6 +774,24 @@ class FaceService {
     _interpreter?.close();
     _interpreter = null;
   }
+}
+
+class _FacePoint {
+  final double x;
+  final double y;
+
+  const _FacePoint(this.x, this.y);
+}
+
+class _AffineMap {
+  final double a;
+  final double b;
+  final double c;
+  final double d;
+  final double e;
+  final double f;
+
+  const _AffineMap(this.a, this.b, this.c, this.d, this.e, this.f);
 }
 
 class _PreparedFace {

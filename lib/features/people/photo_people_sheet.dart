@@ -202,8 +202,16 @@ class _PhotoPeopleBodyState extends State<_PhotoPeopleBody> {
                   separatorBuilder: (_, __) => const Divider(),
                   itemBuilder: (context, index) {
                     final person = people[index];
+                    final face = person.coverFaceJpeg;
                     return ListTile(
-                      leading: CircleAvatar(child: Text('${index + 1}')),
+                      leading: CircleAvatar(
+                        backgroundImage: face?.isNotEmpty == true
+                            ? MemoryImage(face!)
+                            : null,
+                        child: face?.isNotEmpty == true
+                            ? null
+                            : const Icon(Icons.person_outline),
+                      ),
                       title: Text(person.name),
                       subtitle: Text(
                         '${person.photoCount} صورة في ألبومه الذكي',

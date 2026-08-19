@@ -7,7 +7,6 @@ import '../../data/prefs/app_prefs.dart';
 import '../../data/repositories/media_repository.dart';
 import '../../data/repositories/precise_search_repository.dart';
 import '../ai/color_service.dart';
-import '../ai/face_service.dart';
 import '../ai/object_detection_service.dart';
 import '../ai/ocr_service.dart';
 import '../ai/scene_label_service.dart';
@@ -236,22 +235,9 @@ class PreciseIndexer {
       }
     }
 
-    if (processed > 0 && !cancelled) {
-      onProgress(
-        IndexProgress(
-          processed: processed,
-          total: ids.length,
-          phase: 'تحسين ألبومات الأشخاص ودمج التكرارات الآمنة…',
-        ),
-      );
-      try {
-        await FaceService.instance.refineClusters(maxMerges: 6);
-      } catch (error, stackTrace) {
-        // Cluster refinement is a safe post-pass. Never fail a successful
-        // image index because a refinement attempt could not complete.
-        debugPrint('PixMind face refinement error: $error\n$stackTrace');
-      }
-    }
+    // Face recognition is temporarily decoupled from the heavy AI index.
+    // People -> Face Lab can rebuild faces independently without rerunning
+    // YOLO/scene/OCR, which makes calibration much faster and safer.
 
     final pending = await _database.getPendingQueueCount();
     await _database.finishIndexRun(
@@ -332,31 +318,14 @@ class PreciseIndexer {
 
       await waitWhilePaused();
       if (shouldCancel()) throw const _GracefulIndexInterruption();
-      onProgress(
-        IndexProgress(
-          processed: processed,
-          total: total,
-          phase: 'كشف الوجوه وتجميع الأشخاص…',
-          assetName: asset.title,
-        ),
-      );
-      Object? faceStageError;
-      try {
-        final faceResult = await FaceService.instance.analyzeAndStore(
-          assetId: asset.id,
-          imagePath: file.path,
-        );
-        faceCount = faceResult.faceCount;
-        people = faceResult.people.map((person) => person.name).toList();
-      } catch (error, stackTrace) {
-        // Face recognition is an enrichment stage. Never discard successful
-        // YOLO/scene/OCR results just because MobileFaceNet or ML Kit failed.
-        faceStageError = error;
-        faceCount = await _database.getFaceScanCount(asset.id);
-        debugPrint(
-          'PixMind face stage error for ${asset.id}: $error\n$stackTrace',
-        );
-      }
+
+      // Face v3 is intentionally isolated while we calibrate recognition.
+      // Reuse any existing face summary, but do not run ML Kit/MobileFaceNet
+      // from Index next 20 / Index all. People -> Face Lab owns that stage.
+      faceCount = await _database.getFaceScanCount(asset.id);
+      people = (await _database.getPeopleForAsset(asset.id))
+          .map((person) => person.name)
+          .toList(growable: false);
 
       final metadata = _metadataFor(
         asset,
@@ -381,15 +350,6 @@ class PreciseIndexer {
           indexedAt: DateTime.now(),
         ),
       );
-      if (faceStageError != null) {
-        // Faces are an enrichment stage. Keep the successful object/scene/OCR
-        // index and mark the queue item done instead of re-running every heavy
-        // stage just because face recognition failed on this photo.
-        debugPrint(
-          'PixMind saved partial AI index without face recognition for '
-          '${asset.id}: $faceStageError',
-        );
-      }
       return;
     }
 

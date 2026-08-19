@@ -74,6 +74,38 @@ class SmartSearchBridge {
     return resolved;
   }
 
+  /// Raw ids from the heavy content index. Federated search uses ids first,
+  /// intersects them with Face/ObjectBox sources, then resolves only the final
+  /// photos. This avoids requiring every feature to share one database row.
+  Future<Set<String>> searchIndexedAssetIds(
+    String query, {
+    SmartSearchDomain domain = SmartSearchDomain.general,
+    int limit = 800,
+  }) async {
+    final value = query.trim();
+    if (value.isEmpty) return const <String>{};
+    final hits = await _search.search(
+      value,
+      scope: _scope(domain),
+      limit: limit,
+    );
+    return hits.map((hit) => hit.assetId).toSet();
+  }
+
+  /// Raw ids directly from the Face Lab / People index. No AI-content index
+  /// row is required, so naming a person makes their photos searchable
+  /// immediately after face classification.
+  Future<Set<String>> searchPersonAssetIds(
+    String normalizedName, {
+    int limit = 800,
+  }) async {
+    final ids = await _database.searchPersonAssetIdsByName(
+      normalizedName,
+      limit: limit,
+    );
+    return ids.toSet();
+  }
+
   Future<IndexDashboardStats> stats() async {
     final total = await _media.getTotalCount(RequestType.image);
     return _database.getDashboardStats(totalImages: total);

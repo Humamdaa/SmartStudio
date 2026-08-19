@@ -947,6 +947,39 @@ class DatabaseHelper {
     return Sqflite.firstIntValue(rows) ?? 0;
   }
 
+  /// Asset ids whose face pass is complete for [pipelineVersion].
+  ///
+  /// Face Lab uses this to resume across button presses and app restarts
+  /// without rerunning ML Kit/MobileFaceNet on photos that already finished.
+  /// A partial pass is deliberately excluded because its pipeline version is
+  /// stored as `partial:<version>`.
+  Future<Set<String>> getCompletedFaceScanAssetIds(
+    String pipelineVersion,
+  ) async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      '''
+      SELECT fs.asset_id
+      FROM face_scans fs
+      LEFT JOIN (
+        SELECT asset_id, COUNT(*) AS stored_count
+        FROM face_instances
+        GROUP BY asset_id
+      ) fi ON fi.asset_id = fs.asset_id
+      WHERE fs.pipeline_version = ?
+        AND (
+          COALESCE(fs.face_count, 0) = 0
+          OR COALESCE(fi.stored_count, 0) >= COALESCE(fs.face_count, 0)
+        )
+      ''',
+      [pipelineVersion],
+    );
+    return rows
+        .map((row) => row['asset_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   Future<void> markFaceScanned(
     String assetId,
     int faceCount, {
@@ -959,6 +992,34 @@ class DatabaseHelper {
       'face_count': faceCount,
       'pipeline_version': pipelineVersion,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+
+  /// Keeps the legacy search_index face summary in sync when Face Lab runs
+  /// independently from the heavy YOLO/OCR indexer. Person-name search itself
+  /// is resolved dynamically through person_assets/person_groups.
+  Future<void> updateSearchFaceSummary(String assetId) async {
+    final database = await db;
+    final scanRows = await database.query(
+      'face_scans',
+      columns: const ['face_count'],
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+      limit: 1,
+    );
+    final count = scanRows.isEmpty
+        ? 0
+        : (scanRows.first['face_count'] as num?)?.toInt() ?? 0;
+    final people = await getPeopleForAsset(assetId);
+    await database.update(
+      'search_index',
+      {
+        'face_count': count,
+        'people': jsonEncode(people.map((person) => person.name).toList()),
+      },
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+    );
   }
 
   /// Lightweight face signals for the For You ranking.
@@ -1641,6 +1702,35 @@ class DatabaseHelper {
       [personId],
     );
     return results.map((row) => row['asset_id'] as String).toList();
+  }
+
+  /// Finds photo ids directly from the Face/People index, without requiring
+  /// a row in search_index. This is intentionally independent from the heavy
+  /// YOLO/OCR index so a named person becomes searchable as soon as Face Lab
+  /// has classified and named them.
+  Future<List<String>> searchPersonAssetIdsByName(
+    String normalizedName, {
+    int limit = 800,
+  }) async {
+    final value = normalizedName.trim();
+    if (value.isEmpty) return const [];
+
+    final database = await db;
+    final rows = await database.rawQuery(
+      '''
+      SELECT DISTINCT pa.asset_id AS asset_id
+      FROM person_assets pa
+      JOIN person_groups pg ON pg.id = pa.person_id
+      WHERE pg.search_name LIKE ?
+      LIMIT ?
+    ''',
+      ['%$value%', limit],
+    );
+    return rows
+        .map((row) => row['asset_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
   }
 
   /// Real smart-album suggestions derived from the existing offline AI index.
