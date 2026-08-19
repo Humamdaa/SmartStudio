@@ -14,7 +14,9 @@ class DatabaseHelper {
 
   static const currentContentModelPrefix = 'content-v2.3.8:';
   static const currentOcrPipelineVersion = 'ocr-v2.3.8:mlkit-latin+tesseract-ara';
-  static const _databaseVersion = 7;
+  static const currentVideoObjectPipelineVersion = 'video-objects-v2.4.0-yolo11n';
+  static const currentVideoPeoplePipelineVersion = 'video-people-v2.4.0-face-v3-known';
+  static const _databaseVersion = 8;
   static Database? _db;
 
   Future<Database> get db async {
@@ -193,6 +195,44 @@ class DatabaseHelper {
         last_error TEXT
       )
     ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS video_index_state (
+        asset_id TEXT PRIMARY KEY,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        sampled_frames INTEGER NOT NULL DEFAULT 0,
+        object_pipeline_version TEXT NOT NULL DEFAULT '',
+        object_status TEXT NOT NULL DEFAULT 'pending',
+        people_pipeline_version TEXT NOT NULL DEFAULT '',
+        people_status TEXT NOT NULL DEFAULT 'pending',
+        updated_at INTEGER NOT NULL,
+        last_error TEXT
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS video_object_hits (
+        asset_id TEXT NOT NULL,
+        object_name TEXT NOT NULL,
+        first_timestamp_ms INTEGER NOT NULL DEFAULT 0,
+        hit_count INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (asset_id, object_name)
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS video_person_candidate_frames (
+        asset_id TEXT NOT NULL,
+        timestamp_ms INTEGER NOT NULL,
+        PRIMARY KEY (asset_id, timestamp_ms)
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS video_person_hits (
+        asset_id TEXT NOT NULL,
+        person_id TEXT NOT NULL,
+        first_timestamp_ms INTEGER NOT NULL DEFAULT 0,
+        hit_count INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (asset_id, person_id)
+      )
+    ''');
 
     // v2.3.7 and earlier stored Content + OCR as one completed row. Preserve
     // that expensive OCR work when upgrading to the split v2.3.8 stages.
@@ -339,6 +379,15 @@ class DatabaseHelper {
     );
     await database.execute(
       'CREATE INDEX IF NOT EXISTS idx_person_assets_person ON person_assets(person_id, asset_id)',
+    );
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_video_object_hits_name ON video_object_hits(object_name)',
+    );
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_video_person_hits_person ON video_person_hits(person_id)',
+    );
+    await database.execute(
+      'CREATE INDEX IF NOT EXISTS idx_video_candidate_asset ON video_person_candidate_frames(asset_id, timestamp_ms)',
     );
   }
 
@@ -1756,6 +1805,55 @@ class DatabaseHelper {
         whereArgs: [sourceId],
       );
 
+      // Keep Smart Video Index references valid when the user merges two
+      // People clusters. Video hits store person ids (not copied names), so
+      // moving them here also makes future renames work automatically.
+      final sourceVideoHits = await txn.query(
+        'video_person_hits',
+        where: 'person_id = ?',
+        whereArgs: [sourceId],
+      );
+      for (final hit in sourceVideoHits) {
+        final assetId = hit['asset_id']?.toString();
+        if (assetId == null || assetId.isEmpty) continue;
+        final sourceFirst =
+            (hit['first_timestamp_ms'] as num?)?.toInt() ?? 0;
+        final sourceCount = (hit['hit_count'] as num?)?.toInt() ?? 1;
+        final targetHits = await txn.query(
+          'video_person_hits',
+          where: 'asset_id = ? AND person_id = ?',
+          whereArgs: [assetId, targetId],
+          limit: 1,
+        );
+        if (targetHits.isEmpty) {
+          await txn.insert('video_person_hits', {
+            'asset_id': assetId,
+            'person_id': targetId,
+            'first_timestamp_ms': sourceFirst,
+            'hit_count': sourceCount,
+          });
+        } else {
+          final targetHit = targetHits.first;
+          final targetFirst =
+              (targetHit['first_timestamp_ms'] as num?)?.toInt() ?? sourceFirst;
+          final targetCount = (targetHit['hit_count'] as num?)?.toInt() ?? 0;
+          await txn.update(
+            'video_person_hits',
+            {
+              'first_timestamp_ms': math.min(targetFirst, sourceFirst),
+              'hit_count': targetCount + sourceCount,
+            },
+            where: 'asset_id = ? AND person_id = ?',
+            whereArgs: [assetId, targetId],
+          );
+        }
+      }
+      await txn.delete(
+        'video_person_hits',
+        where: 'person_id = ?',
+        whereArgs: [sourceId],
+      );
+
       await txn.rawInsert(
         '''
         INSERT OR IGNORE INTO face_rejections(asset_id, person_id, created_at)
@@ -2202,6 +2300,287 @@ class DatabaseHelper {
         .map((row) => row['asset_id']?.toString())
         .whereType<String>()
         .toList(growable: false);
+  }
+
+  // Smart video index ------------------------------------------------------
+
+  Future<Set<String>> getCompletedVideoObjectAssetIds() async {
+    final database = await db;
+    final rows = await database.query(
+      'video_index_state',
+      columns: const ['asset_id'],
+      where: 'object_status = ? AND object_pipeline_version = ?',
+      whereArgs: const ['done', currentVideoObjectPipelineVersion],
+    );
+    return rows
+        .map((row) => row['asset_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<Set<String>> getCompletedVideoPeopleAssetIds() async {
+    final database = await db;
+    final rows = await database.query(
+      'video_index_state',
+      columns: const ['asset_id'],
+      where: 'people_status = ? AND people_pipeline_version = ?',
+      whereArgs: const ['done', currentVideoPeoplePipelineVersion],
+    );
+    return rows
+        .map((row) => row['asset_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<int> getCompletedVideoObjectCount() async =>
+      (await getCompletedVideoObjectAssetIds()).length;
+
+  Future<int> getCompletedVideoPeopleCount() async =>
+      (await getCompletedVideoPeopleAssetIds()).length;
+
+  Future<void> replaceVideoObjectIndex({
+    required String assetId,
+    required int durationMs,
+    required int sampledFrames,
+    required Map<String, int> firstTimestampMs,
+    required Map<String, int> hitCounts,
+    required List<int> personCandidateTimestampsMs,
+  }) async {
+    final database = await db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await database.transaction((txn) async {
+      await txn.delete(
+        'video_object_hits',
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+      );
+      await txn.delete(
+        'video_person_candidate_frames',
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+      );
+      await txn.delete(
+        'video_person_hits',
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+      );
+
+      for (final entry in firstTimestampMs.entries) {
+        await txn.insert(
+          'video_object_hits',
+          {
+            'asset_id': assetId,
+            'object_name': entry.key,
+            'first_timestamp_ms': entry.value,
+            'hit_count': hitCounts[entry.key] ?? 1,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final timestamp in personCandidateTimestampsMs.toSet()) {
+        await txn.insert(
+          'video_person_candidate_frames',
+          {'asset_id': assetId, 'timestamp_ms': timestamp},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+
+      final existing = await txn.query(
+        'video_index_state',
+        columns: const ['asset_id'],
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+        limit: 1,
+      );
+      final values = <String, Object?>{
+        'asset_id': assetId,
+        'duration_ms': durationMs,
+        'sampled_frames': sampledFrames,
+        'object_pipeline_version': currentVideoObjectPipelineVersion,
+        'object_status': 'done',
+        // Object rescan invalidates the video-person pass because candidate
+        // timestamps may have changed.
+        'people_pipeline_version': '',
+        'people_status': 'pending',
+        'updated_at': now,
+        'last_error': null,
+      };
+      if (existing.isEmpty) {
+        await txn.insert('video_index_state', values);
+      } else {
+        await txn.update(
+          'video_index_state',
+          values,
+          where: 'asset_id = ?',
+          whereArgs: [assetId],
+        );
+      }
+    });
+  }
+
+  Future<void> markVideoObjectFailed(String assetId, Object error) async {
+    final database = await db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await database.transaction((txn) async {
+      await txn.delete('video_object_hits', where: 'asset_id = ?', whereArgs: [assetId]);
+      await txn.delete(
+        'video_person_candidate_frames',
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+      );
+      await txn.delete('video_person_hits', where: 'asset_id = ?', whereArgs: [assetId]);
+      await txn.insert(
+        'video_index_state',
+        {
+          'asset_id': assetId,
+          'object_pipeline_version': currentVideoObjectPipelineVersion,
+          'object_status': 'failed',
+          'people_pipeline_version': '',
+          'people_status': 'pending',
+          'updated_at': now,
+          'last_error': error.toString(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  Future<List<int>> getVideoPersonCandidateTimestamps(String assetId) async {
+    final database = await db;
+    final rows = await database.query(
+      'video_person_candidate_frames',
+      columns: const ['timestamp_ms'],
+      where: 'asset_id = ?',
+      whereArgs: [assetId],
+      orderBy: 'timestamp_ms ASC',
+    );
+    return rows
+        .map((row) => (row['timestamp_ms'] as num?)?.toInt())
+        .whereType<int>()
+        .toList(growable: false);
+  }
+
+  Future<void> replaceVideoPeopleIndex({
+    required String assetId,
+    required Map<String, int> firstTimestampMs,
+    required Map<String, int> hitCounts,
+  }) async {
+    final database = await db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await database.transaction((txn) async {
+      await txn.delete(
+        'video_person_hits',
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+      );
+      for (final entry in firstTimestampMs.entries) {
+        await txn.insert(
+          'video_person_hits',
+          {
+            'asset_id': assetId,
+            'person_id': entry.key,
+            'first_timestamp_ms': entry.value,
+            'hit_count': hitCounts[entry.key] ?? 1,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await txn.update(
+        'video_index_state',
+        {
+          'people_pipeline_version': currentVideoPeoplePipelineVersion,
+          'people_status': 'done',
+          'updated_at': now,
+          'last_error': null,
+        },
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+      );
+    });
+  }
+
+  Future<void> markVideoPeopleFailed(String assetId, Object error) async {
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.delete('video_person_hits', where: 'asset_id = ?', whereArgs: [assetId]);
+      await txn.update(
+        'video_index_state',
+        {
+          'people_pipeline_version': currentVideoPeoplePipelineVersion,
+          'people_status': 'failed',
+          'updated_at': DateTime.now().millisecondsSinceEpoch,
+          'last_error': error.toString(),
+        },
+        where: 'asset_id = ?',
+        whereArgs: [assetId],
+      );
+    });
+  }
+
+  Future<List<String>> searchVideoObjectAssetIds(
+    String normalizedTerm, {
+    int limit = 800,
+  }) async {
+    final value = normalizedTerm.trim();
+    if (value.isEmpty) return const [];
+    final database = await db;
+    final rows = await database.rawQuery(
+      '''
+      SELECT DISTINCT asset_id
+      FROM video_object_hits
+      WHERE object_name LIKE ?
+      ORDER BY hit_count DESC, first_timestamp_ms ASC
+      LIMIT ?
+      ''',
+      ['%$value%', limit],
+    );
+    return rows
+        .map((row) => row['asset_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<List<String>> searchVideoPersonAssetIdsByName(
+    String normalizedName, {
+    int limit = 800,
+  }) async {
+    final value = normalizedName.trim();
+    if (value.isEmpty) return const [];
+    final database = await db;
+    final rows = await database.rawQuery(
+      '''
+      SELECT DISTINCT vph.asset_id AS asset_id
+      FROM video_person_hits vph
+      JOIN person_groups pg ON pg.id = vph.person_id
+      WHERE pg.search_name LIKE ?
+      ORDER BY vph.hit_count DESC, vph.first_timestamp_ms ASC
+      LIMIT ?
+      ''',
+      ['%$value%', limit],
+    );
+    return rows
+        .map((row) => row['asset_id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<List<String>> searchVideoGeneralAssetIds(
+    String normalizedTerm, {
+    int limit = 800,
+  }) async {
+    final objects = await searchVideoObjectAssetIds(
+      normalizedTerm,
+      limit: limit,
+    );
+    final people = await searchVideoPersonAssetIdsByName(
+      normalizedTerm,
+      limit: limit,
+    );
+    return <String>{...objects, ...people}.take(limit).toList(growable: false);
   }
 
   // Dashboard ---------------------------------------------------------------

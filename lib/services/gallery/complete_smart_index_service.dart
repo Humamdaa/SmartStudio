@@ -13,6 +13,7 @@ import '../indexing_service.dart';
 import '../smart_search_bridge.dart';
 import 'face_index_service.dart';
 import 'ocr_index_service.dart';
+import 'video_index_service.dart';
 
 enum CompleteSmartIndexStage {
   idle,
@@ -36,6 +37,10 @@ class CompleteSmartIndexSnapshot {
     required this.peopleIndexed,
     required this.visualIndexed,
     required this.arabicOcrEnabled,
+    required this.videoIndexingEnabled,
+    required this.videoTotal,
+    required this.videoContentIndexed,
+    required this.videoPeopleIndexed,
   });
 
   const CompleteSmartIndexSnapshot.empty()
@@ -45,7 +50,11 @@ class CompleteSmartIndexSnapshot {
         ocrIndexed = 0,
         peopleIndexed = 0,
         visualIndexed = 0,
-        arabicOcrEnabled = true;
+        arabicOcrEnabled = true,
+        videoIndexingEnabled = true,
+        videoTotal = 0,
+        videoContentIndexed = 0,
+        videoPeopleIndexed = 0;
 
   final int total;
   final int galleryAnalyzed;
@@ -54,6 +63,10 @@ class CompleteSmartIndexSnapshot {
   final int peopleIndexed;
   final int visualIndexed;
   final bool arabicOcrEnabled;
+  final bool videoIndexingEnabled;
+  final int videoTotal;
+  final int videoContentIndexed;
+  final int videoPeopleIndexed;
 
   int _safe(int value) => total <= 0 ? 0 : value.clamp(0, total).toInt();
 
@@ -64,9 +77,20 @@ class CompleteSmartIndexSnapshot {
   int get safeVisualIndexed => _safe(visualIndexed);
 
   bool get galleryComplete => total > 0 && safeGalleryAnalyzed >= total;
-  bool get contentComplete => total > 0 && safeContentIndexed >= total;
+  int get safeVideoContentIndexed =>
+      videoTotal <= 0 ? 0 : videoContentIndexed.clamp(0, videoTotal).toInt();
+  int get safeVideoPeopleIndexed =>
+      videoTotal <= 0 ? 0 : videoPeopleIndexed.clamp(0, videoTotal).toInt();
+  bool get videoContentComplete =>
+      !videoIndexingEnabled || videoTotal <= 0 || safeVideoContentIndexed >= videoTotal;
+  bool get videoPeopleComplete =>
+      !videoIndexingEnabled || videoTotal <= 0 || safeVideoPeopleIndexed >= videoTotal;
+
+  bool get contentComplete =>
+      total > 0 && safeContentIndexed >= total && videoContentComplete;
   bool get ocrComplete => total > 0 && safeOcrIndexed >= total;
-  bool get peopleComplete => total > 0 && safePeopleIndexed >= total;
+  bool get peopleComplete =>
+      total > 0 && safePeopleIndexed >= total && videoPeopleComplete;
   bool get visualComplete => total > 0 && safeVisualIndexed >= total;
 
   bool get isComplete =>
@@ -79,12 +103,21 @@ class CompleteSmartIndexSnapshot {
 
   double get overallFraction {
     if (total <= 0) return 0;
-    final done = safeGalleryAnalyzed +
-        safeContentIndexed +
-        safeOcrIndexed +
-        safePeopleIndexed +
-        safeVisualIndexed;
-    return (done / (total * 5)).clamp(0.0, 1.0).toDouble();
+    final videoUnits = videoIndexingEnabled ? videoTotal : 0;
+    final contentDenominator = total + videoUnits;
+    final peopleDenominator = total + videoUnits;
+    final galleryFraction = safeGalleryAnalyzed / total;
+    final contentFraction = contentDenominator <= 0
+        ? 1.0
+        : (safeContentIndexed + safeVideoContentIndexed) / contentDenominator;
+    final ocrFraction = safeOcrIndexed / total;
+    final peopleFraction = peopleDenominator <= 0
+        ? 1.0
+        : (safePeopleIndexed + safeVideoPeopleIndexed) / peopleDenominator;
+    final visualFraction = safeVisualIndexed / total;
+    return ((galleryFraction + contentFraction + ocrFraction + peopleFraction + visualFraction) / 5)
+        .clamp(0.0, 1.0)
+        .toDouble();
   }
 
   CompleteSmartIndexSnapshot copyWith({
@@ -95,6 +128,10 @@ class CompleteSmartIndexSnapshot {
     int? peopleIndexed,
     int? visualIndexed,
     bool? arabicOcrEnabled,
+    bool? videoIndexingEnabled,
+    int? videoTotal,
+    int? videoContentIndexed,
+    int? videoPeopleIndexed,
   }) {
     return CompleteSmartIndexSnapshot(
       total: total ?? this.total,
@@ -104,6 +141,10 @@ class CompleteSmartIndexSnapshot {
       peopleIndexed: peopleIndexed ?? this.peopleIndexed,
       visualIndexed: visualIndexed ?? this.visualIndexed,
       arabicOcrEnabled: arabicOcrEnabled ?? this.arabicOcrEnabled,
+      videoIndexingEnabled: videoIndexingEnabled ?? this.videoIndexingEnabled,
+      videoTotal: videoTotal ?? this.videoTotal,
+      videoContentIndexed: videoContentIndexed ?? this.videoContentIndexed,
+      videoPeopleIndexed: videoPeopleIndexed ?? this.videoPeopleIndexed,
     );
   }
 }
@@ -153,29 +194,39 @@ class CompleteSmartIndexState {
     final base = snapshot.overallFraction;
     if (!running || snapshot.total <= 0 || stageFraction == null) return base;
 
-    final persistedCurrentStage = switch (stage) {
-      CompleteSmartIndexStage.gallery => snapshot.safeGalleryAnalyzed,
-      CompleteSmartIndexStage.content => snapshot.safeContentIndexed,
-      CompleteSmartIndexStage.ocr => snapshot.safeOcrIndexed,
-      CompleteSmartIndexStage.people => snapshot.safePeopleIndexed,
-      CompleteSmartIndexStage.visual => snapshot.safeVisualIndexed,
-      _ => -1,
-    };
-    if (persistedCurrentStage < 0) return base;
+    final videoUnits = snapshot.videoIndexingEnabled ? snapshot.videoTotal : 0;
+    final contentDenominator = snapshot.total + videoUnits;
+    final gallery = snapshot.safeGalleryAnalyzed / snapshot.total;
+    final content = contentDenominator <= 0
+        ? 1.0
+        : (snapshot.safeContentIndexed + snapshot.safeVideoContentIndexed) /
+            contentDenominator;
+    final ocr = snapshot.safeOcrIndexed / snapshot.total;
+    final people = contentDenominator <= 0
+        ? 1.0
+        : (snapshot.safePeopleIndexed + snapshot.safeVideoPeopleIndexed) /
+            contentDenominator;
+    final visual = snapshot.safeVisualIndexed / snapshot.total;
 
-    final persistedDone = snapshot.safeGalleryAnalyzed +
-        snapshot.safeContentIndexed +
-        snapshot.safeOcrIndexed +
-        snapshot.safePeopleIndexed +
-        snapshot.safeVisualIndexed;
-    final liveCurrentStage =
-        (snapshot.total * stageFraction!).round().clamp(0, snapshot.total);
-    final done = persistedDone -
-        persistedCurrentStage +
-        (liveCurrentStage > persistedCurrentStage
-            ? liveCurrentStage
-            : persistedCurrentStage);
-    return (done / (snapshot.total * 5)).clamp(base, 1.0).toDouble();
+    final persisted = switch (stage) {
+      CompleteSmartIndexStage.gallery => gallery,
+      CompleteSmartIndexStage.content => content,
+      CompleteSmartIndexStage.ocr => ocr,
+      CompleteSmartIndexStage.people => people,
+      CompleteSmartIndexStage.visual => visual,
+      _ => -1.0,
+    };
+    if (persisted < 0) return base;
+    final live = stageFraction!.clamp(persisted, 1.0).toDouble();
+    final totalFraction = switch (stage) {
+      CompleteSmartIndexStage.gallery => live + content + ocr + people + visual,
+      CompleteSmartIndexStage.content => gallery + live + ocr + people + visual,
+      CompleteSmartIndexStage.ocr => gallery + content + live + people + visual,
+      CompleteSmartIndexStage.people => gallery + content + ocr + live + visual,
+      CompleteSmartIndexStage.visual => gallery + content + ocr + people + live,
+      _ => base * 5,
+    };
+    return (totalFraction / 5).clamp(base, 1.0).toDouble();
   }
 }
 
@@ -202,6 +253,7 @@ class CompleteSmartIndexService {
     DatabaseHelper? database,
     FaceIndexService? faceIndexer,
     OcrIndexService? ocrIndexer,
+    VideoIndexService? videoIndexer,
   })  : _galleryIndexer = galleryIndexer,
         _contentBridge = contentBridge,
         _visualIndexer = visualIndexer,
@@ -209,7 +261,8 @@ class CompleteSmartIndexService {
         _mediaRepository = mediaRepository ?? MediaRepository(),
         _database = database ?? DatabaseHelper.instance,
         _faceIndexer = faceIndexer ?? FaceIndexService.instance,
-        _ocrIndexer = ocrIndexer ?? OcrIndexService.instance;
+        _ocrIndexer = ocrIndexer ?? OcrIndexService.instance,
+        _videoIndexer = videoIndexer ?? VideoIndexService();
 
   final IndexingService _galleryIndexer;
   final SmartSearchBridge _contentBridge;
@@ -219,6 +272,7 @@ class CompleteSmartIndexService {
   final DatabaseHelper _database;
   final FaceIndexService _faceIndexer;
   final OcrIndexService _ocrIndexer;
+  final VideoIndexService _videoIndexer;
 
   final ValueNotifier<CompleteSmartIndexState> progress =
       ValueNotifier<CompleteSmartIndexState>(
@@ -233,11 +287,15 @@ class CompleteSmartIndexService {
     final total = await _mediaRepository.getTotalCount(RequestType.image);
     final content = await _database.getPresentationIndexedCount();
     final arabic = await AppPrefs.instance.arabicOcrEnabled;
+    final videoEnabled = await AppPrefs.instance.videoIndexingEnabled;
     final ocr = await _database.getOcrIndexedCount(arabicRequired: arabic);
     final people = await _database.getCompletedFaceScanCount(
       FaceService.facePipelineVersion,
     );
     final visual = await _visualRepository.countIndexedImages();
+    final videoTotal = await _mediaRepository.getTotalCount(RequestType.video);
+    final videoContent = await _database.getCompletedVideoObjectCount();
+    final videoPeople = await _database.getCompletedVideoPeopleCount();
 
     final snapshot = CompleteSmartIndexSnapshot(
       total: total,
@@ -247,6 +305,10 @@ class CompleteSmartIndexService {
       peopleIndexed: people,
       visualIndexed: visual,
       arabicOcrEnabled: arabic,
+      videoIndexingEnabled: videoEnabled,
+      videoTotal: videoTotal,
+      videoContentIndexed: videoContent,
+      videoPeopleIndexed: videoPeople,
     );
 
     final current = progress.value;
@@ -301,6 +363,7 @@ class CompleteSmartIndexService {
     _galleryIndexer.cancel();
     _ocrIndexer.stop();
     _faceIndexer.stop();
+    _videoIndexer.stop();
     progress.value = progress.value.copyWith(
       status: 'Stopping safely after the current image…',
     );
@@ -346,8 +409,8 @@ class CompleteSmartIndexService {
             : CompleteSmartIndexStage.idle,
         snapshot: snapshot,
         status: snapshot.isComplete
-            ? 'Complete Smart Index finished. Every current photo is ready.'
-            : 'Smart Index pass finished. Some photos remain and can be retried safely.',
+            ? 'Complete Smart Index finished. Current enabled media stages are ready.'
+            : 'Smart Index pass finished. Some media remains and can be retried safely.',
         stageFraction: null,
       );
     } catch (error, stackTrace) {
@@ -414,63 +477,129 @@ class CompleteSmartIndexService {
     var snapshot = await refresh();
     if (snapshot.contentComplete || _cancelRequested) return;
 
+    final initialContentUnits =
+        snapshot.total + (snapshot.videoIndexingEnabled ? snapshot.videoTotal : 0);
+
     progress.value = progress.value.copyWith(
       running: true,
       stage: CompleteSmartIndexStage.content,
       snapshot: snapshot,
       status: 'Content: YOLO, scene, named colors and metadata — OCR runs next as a separate stage…',
-      stageFraction: snapshot.total <= 0
+      stageFraction: initialContentUnits <= 0
           ? 0
-          : snapshot.safeContentIndexed / snapshot.total,
+          : (snapshot.safeContentIndexed + snapshot.safeVideoContentIndexed) /
+              initialContentUnits,
     );
 
     final startingCount = snapshot.safeContentIndexed;
-    final result = await _contentBridge.indexAll(
-      shouldCancel: () => _cancelRequested,
-      onQueueProgress: (p) {
-        if (!progress.value.running ||
-            progress.value.stage != CompleteSmartIndexStage.content) {
-          return;
-        }
-        progress.value = progress.value.copyWith(
-          status: 'Content: checking library queue ${p.discovered}/${p.total}…',
-        );
-      },
-      onProgress: (p) {
-        if (!progress.value.running ||
-            progress.value.stage != CompleteSmartIndexStage.content) {
-          return;
-        }
-        final liveCount = (startingCount + p.processed)
-            .clamp(0, progress.value.snapshot.total)
-            .toInt();
-        final fraction = progress.value.snapshot.total <= 0
-            ? null
-            : liveCount / progress.value.snapshot.total;
-        progress.value = progress.value.copyWith(
-          stageFraction: fraction,
-          status: p.assetName == null
-              ? 'Content: ${p.phase}'
-              : 'Content: ${p.phase}\n${p.assetName}',
-        );
-      },
-    );
+    if (startingCount < snapshot.total) {
+      final result = await _contentBridge.indexAll(
+        shouldCancel: () => _cancelRequested,
+        onQueueProgress: (p) {
+          if (!progress.value.running ||
+              progress.value.stage != CompleteSmartIndexStage.content) {
+            return;
+          }
+          progress.value = progress.value.copyWith(
+            status: 'Content: checking library queue ${p.discovered}/${p.total}…',
+          );
+        },
+        onProgress: (p) {
+          if (!progress.value.running ||
+              progress.value.stage != CompleteSmartIndexStage.content) {
+            return;
+          }
+          final liveCount = (startingCount + p.processed)
+              .clamp(0, progress.value.snapshot.total)
+              .toInt();
+          final currentSnapshot = progress.value.snapshot;
+          final denominator = currentSnapshot.total +
+              (currentSnapshot.videoIndexingEnabled
+                  ? currentSnapshot.videoTotal
+                  : 0);
+          final fraction = denominator <= 0
+              ? null
+              : (liveCount + currentSnapshot.safeVideoContentIndexed) /
+                  denominator;
+          progress.value = progress.value.copyWith(
+            stageFraction: fraction,
+            status: p.assetName == null
+                ? 'Content: ${p.phase}'
+                : 'Content: ${p.phase}\n${p.assetName}',
+          );
+        },
+      );
+
+      snapshot = await refresh();
+      final photoVideoUnits =
+          snapshot.total + (snapshot.videoIndexingEnabled ? snapshot.videoTotal : 0);
+      progress.value = progress.value.copyWith(
+        snapshot: snapshot,
+        stageFraction: photoVideoUnits <= 0
+            ? 1
+            : (snapshot.safeContentIndexed + snapshot.safeVideoContentIndexed) /
+                photoVideoUnits,
+        status: result.pausedReason ??
+            'Photo content ready: ${snapshot.safeContentIndexed}/${snapshot.total}; ${result.failed} failed in this pass.',
+      );
+
+      // A thermal/device-health pause is a signal to stop the entire heavy
+      // sequence instead of immediately starting Face/Visual work.
+      if (result.pausedReason != null) {
+        _cancelRequested = true;
+        return;
+      }
+    }
 
     snapshot = await refresh();
+    if (snapshot.videoIndexingEnabled &&
+        !snapshot.videoContentComplete &&
+        !_cancelRequested) {
+      final startingVideo = snapshot.safeVideoContentIndexed;
+      void videoListener() {
+        final p = _videoIndexer.progress.value;
+        if (!progress.value.running ||
+            progress.value.stage != CompleteSmartIndexStage.content) {
+          return;
+        }
+        final currentSnapshot = progress.value.snapshot;
+        final denominator = currentSnapshot.total + currentSnapshot.videoTotal;
+        final liveVideo = (startingVideo + p.processed)
+            .clamp(0, currentSnapshot.videoTotal)
+            .toInt();
+        progress.value = progress.value.copyWith(
+          stageFraction: denominator <= 0
+              ? null
+              : (currentSnapshot.safeContentIndexed + liveVideo) / denominator,
+          status: p.assetName == null
+              ? p.phase
+              : '${p.phase}\n${p.assetName}',
+        );
+      }
+
+      _videoIndexer.progress.addListener(videoListener);
+      try {
+        await _videoIndexer.indexMissingObjects(
+          shouldCancel: () => _cancelRequested,
+        );
+      } finally {
+        _videoIndexer.progress.removeListener(videoListener);
+      }
+    }
+
+    snapshot = await refresh();
+    final denominator =
+        snapshot.total + (snapshot.videoIndexingEnabled ? snapshot.videoTotal : 0);
     progress.value = progress.value.copyWith(
       snapshot: snapshot,
-      stageFraction: snapshot.total <= 0
+      stageFraction: denominator <= 0
           ? 1
-          : snapshot.safeContentIndexed / snapshot.total,
-      status: result.pausedReason ??
-          'Content ready: ${snapshot.safeContentIndexed}/${snapshot.total}; ${result.failed} failed in this pass. Text Recognition can continue independently.',
+          : (snapshot.safeContentIndexed + snapshot.safeVideoContentIndexed) /
+              denominator,
+      status: snapshot.videoIndexingEnabled
+          ? 'Content ready: photos ${snapshot.safeContentIndexed}/${snapshot.total} • videos ${snapshot.safeVideoContentIndexed}/${snapshot.videoTotal}. OCR continues as its own photo stage.'
+          : 'Content ready: ${snapshot.safeContentIndexed}/${snapshot.total} photos. Smart video indexing is off.',
     );
-
-    // A thermal/device-health pause is a signal to stop the entire heavy
-    // sequence instead of immediately starting Face/Visual work.
-    if (result.pausedReason != null) {
-      _cancelRequested = true;
-    }
   }
 
   Future<void> _runOcrStage() async {
@@ -528,14 +657,17 @@ class CompleteSmartIndexService {
     if (snapshot.peopleComplete || _cancelRequested) return;
 
     final startingCount = snapshot.safePeopleIndexed;
+    final initialPeopleUnits =
+        snapshot.total + (snapshot.videoIndexingEnabled ? snapshot.videoTotal : 0);
     progress.value = progress.value.copyWith(
       running: true,
       stage: CompleteSmartIndexStage.people,
       snapshot: snapshot,
       status: 'People: continuing Face v3 only for photos not already scanned…',
-      stageFraction: snapshot.total <= 0
+      stageFraction: initialPeopleUnits <= 0
           ? 0
-          : startingCount / snapshot.total,
+          : (startingCount + snapshot.safeVideoPeopleIndexed) /
+              initialPeopleUnits,
     );
 
     void listener() {
@@ -544,32 +676,83 @@ class CompleteSmartIndexService {
           progress.value.stage != CompleteSmartIndexStage.people) {
         return;
       }
-      final total = progress.value.snapshot.total;
+      final currentSnapshot = progress.value.snapshot;
+      final total = currentSnapshot.total;
       final liveCount = (startingCount + p.processed).clamp(0, total).toInt();
+      final denominator = total +
+          (currentSnapshot.videoIndexingEnabled
+              ? currentSnapshot.videoTotal
+              : 0);
       progress.value = progress.value.copyWith(
         snapshot: progress.value.snapshot.copyWith(peopleIndexed: liveCount),
-        stageFraction: total <= 0 ? null : liveCount / total,
+        stageFraction: denominator <= 0
+            ? null
+            : (liveCount + currentSnapshot.safeVideoPeopleIndexed) /
+                denominator,
         status: p.status,
       );
     }
 
-    _faceIndexer.progress.addListener(listener);
-    try {
-      if (!_faceIndexer.isRunning) {
-        await _faceIndexer.start(limit: null);
+    if (startingCount < snapshot.total) {
+      _faceIndexer.progress.addListener(listener);
+      try {
+        if (!_faceIndexer.isRunning) {
+          await _faceIndexer.start(limit: null);
+        }
+        await _waitForFaceIdle();
+      } finally {
+        _faceIndexer.progress.removeListener(listener);
       }
-      await _waitForFaceIdle();
-    } finally {
-      _faceIndexer.progress.removeListener(listener);
     }
 
     snapshot = await refresh();
+    if (snapshot.videoIndexingEnabled &&
+        !snapshot.videoPeopleComplete &&
+        !_cancelRequested) {
+      final startingVideo = snapshot.safeVideoPeopleIndexed;
+      void videoListener() {
+        final p = _videoIndexer.progress.value;
+        if (!progress.value.running ||
+            progress.value.stage != CompleteSmartIndexStage.people) {
+          return;
+        }
+        final currentSnapshot = progress.value.snapshot;
+        final denominator = currentSnapshot.total + currentSnapshot.videoTotal;
+        final liveVideo = (startingVideo + p.processed)
+            .clamp(0, currentSnapshot.videoTotal)
+            .toInt();
+        progress.value = progress.value.copyWith(
+          stageFraction: denominator <= 0
+              ? null
+              : (currentSnapshot.safePeopleIndexed + liveVideo) / denominator,
+          status: p.assetName == null
+              ? p.phase
+              : '${p.phase}\n${p.assetName}',
+        );
+      }
+
+      _videoIndexer.progress.addListener(videoListener);
+      try {
+        await _videoIndexer.indexMissingPeople(
+          shouldCancel: () => _cancelRequested,
+        );
+      } finally {
+        _videoIndexer.progress.removeListener(videoListener);
+      }
+    }
+
+    snapshot = await refresh();
+    final denominator =
+        snapshot.total + (snapshot.videoIndexingEnabled ? snapshot.videoTotal : 0);
     progress.value = progress.value.copyWith(
       snapshot: snapshot,
-      stageFraction: snapshot.total <= 0
+      stageFraction: denominator <= 0
           ? 1
-          : snapshot.safePeopleIndexed / snapshot.total,
-      status: 'People ready: ${snapshot.safePeopleIndexed}/${snapshot.total} photos completed for Face v3.',
+          : (snapshot.safePeopleIndexed + snapshot.safeVideoPeopleIndexed) /
+              denominator,
+      status: snapshot.videoIndexingEnabled
+          ? 'People ready: photos ${snapshot.safePeopleIndexed}/${snapshot.total} • videos ${snapshot.safeVideoPeopleIndexed}/${snapshot.videoTotal}. Video frames only match stable existing People; they do not alter Face Lab clusters.'
+          : 'People ready: ${snapshot.safePeopleIndexed}/${snapshot.total} photos. Smart video indexing is off.',
     );
   }
 
@@ -660,7 +843,7 @@ class CompleteSmartIndexService {
       stage: CompleteSmartIndexStage.stopped,
       snapshot: snapshot,
       status:
-          'Smart Index stopped safely. Completed stages/photos are saved; Continue Smart Index will resume only what is missing.',
+          'Smart Index stopped safely. Completed media stages are saved; Continue Smart Index will resume only what is missing.',
       stageFraction: null,
     );
   }
