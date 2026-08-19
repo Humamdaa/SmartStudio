@@ -8,6 +8,7 @@ class AppPrefs {
   static const _keyGridColumns = 'grid_columns';
   static const _keyThemeMode = 'theme_mode'; // 'light' | 'dark' | 'system'
   static const _keyBackgroundIndexing = 'background_indexing_enabled';
+  static const _keyBackgroundFaceIndexing = 'background_face_indexing_enabled';
   static const _keyArabicOcr = 'arabic_ocr_enabled';
 
   Future<SharedPreferences> get _p => SharedPreferences.getInstance();
@@ -35,6 +36,12 @@ class AppPrefs {
 
   Future<void> setBackgroundIndexingEnabled(bool enabled) async =>
       (await _p).setBool(_keyBackgroundIndexing, enabled);
+
+  Future<bool> get backgroundFaceIndexingEnabled async =>
+      (await _p).getBool(_keyBackgroundFaceIndexing) ?? false;
+
+  Future<void> setBackgroundFaceIndexingEnabled(bool enabled) async =>
+      (await _p).setBool(_keyBackgroundFaceIndexing, enabled);
 
   Future<bool> get arabicOcrEnabled async =>
       (await _p).getBool(_keyArabicOcr) ?? true;

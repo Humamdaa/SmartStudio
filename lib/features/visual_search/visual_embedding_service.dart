@@ -1,14 +1,52 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import 'visual_search_config.dart';
 
+Float32List _preprocessVisualImage(Uint8List imageBytes) {
+  final decoded = img.decodeImage(imageBytes);
+  if (decoded == null) {
+    throw StateError('Unable to decode image.');
+  }
+
+  final oriented = img.bakeOrientation(decoded);
+  final resized = img.copyResize(
+    oriented,
+    width: VisualSearchConfig.inputWidth,
+    height: VisualSearchConfig.inputHeight,
+    interpolation: img.Interpolation.linear,
+  );
+
+  final input = Float32List(
+    VisualSearchConfig.inputWidth *
+        VisualSearchConfig.inputHeight *
+        VisualSearchConfig.inputChannels,
+  );
+
+  var offset = 0;
+  for (var y = 0; y < VisualSearchConfig.inputHeight; y++) {
+    for (var x = 0; x < VisualSearchConfig.inputWidth; x++) {
+      final pixel = resized.getPixel(x, y);
+      input[offset++] = pixel.r.toDouble();
+      input[offset++] = pixel.g.toDouble();
+      input[offset++] = pixel.b.toDouble();
+    }
+  }
+  return input;
+}
+
 final class VisualEmbeddingService {
   Interpreter? _imageEncoder;
   Interpreter? _imageProjection;
+  IsolateInterpreter? _encoderIsolate;
+  IsolateInterpreter? _projectionIsolate;
+  int _activeRuns = 0;
+  bool _disposeRequested = false;
+  bool _closed = false;
 
   Future<void> initialize() async {
     if (_imageEncoder != null && _imageProjection != null) {
@@ -50,49 +88,55 @@ final class VisualEmbeddingService {
   }
 
   Future<Float32List> generateEmbedding(Uint8List imageBytes) async {
-    await initialize();
+    if (_disposeRequested || _closed) {
+      throw StateError('VisualEmbeddingService is closing.');
+    }
+    _activeRuns++;
+    try {
+      await initialize();
 
-    final input = _preprocessImage(imageBytes);
-    final encoderEmbedding = _runImageEncoder(input);
-    final projectedEmbedding = _runImageProjection(encoderEmbedding);
+      // Image decode/resize is pure Dart and used to block the UI thread.
+      final input = await compute(_preprocessVisualImage, imageBytes);
+      final encoderEmbedding = await _runImageEncoder(input);
+      final projectedEmbedding = await _runImageProjection(encoderEmbedding);
 
-    return _normalizeL2(projectedEmbedding);
+      return _normalizeL2(projectedEmbedding);
+    } finally {
+      _activeRuns--;
+    }
   }
 
-  Float32List _preprocessImage(Uint8List imageBytes) {
-    final decoded = img.decodeImage(imageBytes);
-    if (decoded == null) {
-      throw StateError('Unable to decode image.');
+  Future<IsolateInterpreter> _getEncoderIsolate() async {
+    final current = _encoderIsolate;
+    if (current != null) return current;
+    final interpreter = _imageEncoder;
+    if (interpreter == null) {
+      throw StateError('Image encoder is not initialized.');
     }
-
-    final oriented = img.bakeOrientation(decoded);
-    final resized = img.copyResize(
-      oriented,
-      width: VisualSearchConfig.inputWidth,
-      height: VisualSearchConfig.inputHeight,
-      interpolation: img.Interpolation.linear,
+    final created = await IsolateInterpreter.create(
+      address: interpreter.address,
+      debugName: 'PixMindVisualEncoder',
     );
-
-    final input = Float32List(
-      VisualSearchConfig.inputWidth *
-          VisualSearchConfig.inputHeight *
-          VisualSearchConfig.inputChannels,
-    );
-
-    var offset = 0;
-    for (var y = 0; y < VisualSearchConfig.inputHeight; y++) {
-      for (var x = 0; x < VisualSearchConfig.inputWidth; x++) {
-        final pixel = resized.getPixel(x, y);
-        input[offset++] = pixel.r.toDouble();
-        input[offset++] = pixel.g.toDouble();
-        input[offset++] = pixel.b.toDouble();
-      }
-    }
-
-    return input;
+    _encoderIsolate = created;
+    return created;
   }
 
-  Float32List _runImageEncoder(Float32List input) {
+  Future<IsolateInterpreter> _getProjectionIsolate() async {
+    final current = _projectionIsolate;
+    if (current != null) return current;
+    final interpreter = _imageProjection;
+    if (interpreter == null) {
+      throw StateError('Image projection model is not initialized.');
+    }
+    final created = await IsolateInterpreter.create(
+      address: interpreter.address,
+      debugName: 'PixMindVisualProjection',
+    );
+    _projectionIsolate = created;
+    return created;
+  }
+
+  Future<Float32List> _runImageEncoder(Float32List input) async {
     final interpreter = _imageEncoder;
     if (interpreter == null) {
       throw StateError('Image encoder is not initialized.');
@@ -107,12 +151,14 @@ final class VisualEmbeddingService {
       (_) => List<double>.filled(outputTensor.shape.last, 0.0),
     );
 
-    interpreter.run(inputObject, output);
-
+    final isolate = await _getEncoderIsolate();
+    await isolate.run(inputObject, output);
     return Float32List.fromList(output.first);
   }
 
-  Float32List _runImageProjection(Float32List encoderEmbedding) {
+  Future<Float32List> _runImageProjection(
+    Float32List encoderEmbedding,
+  ) async {
     final interpreter = _imageProjection;
     if (interpreter == null) {
       throw StateError('Image projection model is not initialized.');
@@ -127,8 +173,8 @@ final class VisualEmbeddingService {
       (_) => List<double>.filled(outputTensor.shape.last, 0.0),
     );
 
-    interpreter.run(inputObject, output);
-
+    final isolate = await _getProjectionIsolate();
+    await isolate.run(inputObject, output);
     return Float32List.fromList(output.first);
   }
 
@@ -229,10 +275,22 @@ final class VisualEmbeddingService {
     return true;
   }
 
-  void dispose() {
+  Future<void> dispose() async {
+    if (_closed) return;
+    _disposeRequested = true;
+    while (_activeRuns > 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    final projectionIsolate = _projectionIsolate;
+    _projectionIsolate = null;
+    if (projectionIsolate != null) await projectionIsolate.close();
+    final encoderIsolate = _encoderIsolate;
+    _encoderIsolate = null;
+    if (encoderIsolate != null) await encoderIsolate.close();
     _imageProjection?.close();
     _imageProjection = null;
     _imageEncoder?.close();
     _imageEncoder = null;
+    _closed = true;
   }
 }

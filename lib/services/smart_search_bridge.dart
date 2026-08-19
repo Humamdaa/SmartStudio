@@ -246,12 +246,25 @@ class SmartSearchBridge {
     var yoloReady = true;
     String? yoloError;
 
+    final initialPending = await _database.getPendingQueueCount();
     while (!(shouldCancel?.call() ?? false)) {
       final pending = await _database.getPendingQueueCount();
       if (pending <= 0) break;
+      final processedBeforeBatch = processed;
       final batch = await _indexer.processQueueBatch(
         batchSize: pending > 8 ? 8 : pending,
-        onProgress: onProgress ?? (_) {},
+        onProgress: (p) {
+          onProgress?.call(
+            IndexProgress(
+              processed: (processedBeforeBatch + p.processed)
+                  .clamp(0, initialPending)
+                  .toInt(),
+              total: initialPending,
+              phase: p.phase,
+              assetName: p.assetName,
+            ),
+          );
+        },
         shouldCancel: shouldCancel ?? () => false,
         waitWhilePaused: () async {},
         respectDeviceHealth: true,

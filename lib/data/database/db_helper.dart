@@ -172,6 +172,14 @@ class DatabaseHelper {
         note TEXT
       )
     ''');
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS ai_work_lease (
+        name TEXT PRIMARY KEY,
+        owner TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
 
     // The APK already used early versions of these tables. Additive checks
     // keep its local index and albums intact during this upgrade.
@@ -601,6 +609,17 @@ class DatabaseHelper {
     return rows.map((row) => row['asset_id'] as String).toSet();
   }
 
+  /// Number of photos fully processed by the current content presentation
+  /// pipeline. This avoids materializing tens of thousands of asset ids just
+  /// to render the unified Smart Index dashboard.
+  Future<int> getPresentationIndexedCount() async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      "SELECT COUNT(*) FROM search_index WHERE model_version LIKE 'presentation-v2.0.2:%'",
+    );
+    return Sqflite.firstIntValue(rows) ?? 0;
+  }
+
   Future<List<Map<String, dynamic>>> searchIndex(
     List<String> terms, {
     String scope = 'general',
@@ -860,6 +879,74 @@ class DatabaseHelper {
     }, where: "state = 'failed'");
   }
 
+  // Cross-isolate heavy-AI lease -----------------------------------------
+  //
+  // WorkManager runs in a separate Flutter isolate/engine, while foreground
+  // Face/Content/Visual indexing runs in the app isolate. A tiny SQLite lease
+  // prevents two CPU-heavy pipelines from competing at the same time. The
+  // expiry is intentionally defensive: if Android kills a worker mid-photo,
+  // the next run can recover automatically without a permanent lock.
+  Future<bool> tryAcquireAiWorkLease({
+    required String owner,
+    Duration ttl = const Duration(minutes: 8),
+  }) async {
+    final database = await db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final expiresAt = now + ttl.inMilliseconds;
+    return database.transaction((txn) async {
+      final rows = await txn.query(
+        'ai_work_lease',
+        columns: const ['owner', 'expires_at'],
+        where: 'name = ?',
+        whereArgs: const ['heavy_ai'],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final currentOwner = rows.first['owner']?.toString() ?? '';
+        final currentExpiry =
+            (rows.first['expires_at'] as num?)?.toInt() ?? 0;
+        if (currentOwner != owner && currentExpiry > now) return false;
+      }
+      await txn.insert(
+        'ai_work_lease',
+        {
+          'name': 'heavy_ai',
+          'owner': owner,
+          'expires_at': expiresAt,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return true;
+    });
+  }
+
+  Future<void> refreshAiWorkLease(
+    String owner, {
+    Duration ttl = const Duration(minutes: 8),
+  }) async {
+    final database = await db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await database.update(
+      'ai_work_lease',
+      {
+        'expires_at': now + ttl.inMilliseconds,
+        'updated_at': now,
+      },
+      where: 'name = ? AND owner = ?',
+      whereArgs: ['heavy_ai', owner],
+    );
+  }
+
+  Future<void> releaseAiWorkLease(String owner) async {
+    final database = await db;
+    await database.delete(
+      'ai_work_lease',
+      where: 'name = ? AND owner = ?',
+      whereArgs: ['heavy_ai', owner],
+    );
+  }
+
   Future<int> startIndexRun(String mode) async {
     final database = await db;
     return database.insert('index_runs', {
@@ -978,6 +1065,29 @@ class DatabaseHelper {
         .map((row) => row['asset_id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
         .toSet();
+  }
+
+  /// Count-only companion used by the Complete Smart Index dashboard.
+  Future<int> getCompletedFaceScanCount(String pipelineVersion) async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      '''
+      SELECT COUNT(*)
+      FROM face_scans fs
+      LEFT JOIN (
+        SELECT asset_id, COUNT(*) AS stored_count
+        FROM face_instances
+        GROUP BY asset_id
+      ) fi ON fi.asset_id = fs.asset_id
+      WHERE fs.pipeline_version = ?
+        AND (
+          COALESCE(fs.face_count, 0) = 0
+          OR COALESCE(fi.stored_count, 0) >= COALESCE(fs.face_count, 0)
+        )
+      ''',
+      [pipelineVersion],
+    );
+    return Sqflite.firstIntValue(rows) ?? 0;
   }
 
   Future<void> markFaceScanned(

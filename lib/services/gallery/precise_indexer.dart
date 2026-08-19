@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:photo_manager/photo_manager.dart';
 
@@ -11,6 +13,10 @@ import '../ai/object_detection_service.dart';
 import '../ai/ocr_service.dart';
 import '../ai/scene_label_service.dart';
 import '../device/device_health_service.dart';
+import '../ai/heavy_ai_coordinator.dart';
+
+List<String> _dominantColorsInIsolate(Uint8List bytes) =>
+    ColorService.dominantColors(bytes);
 
 typedef IndexProgressCallback = void Function(IndexProgress progress);
 typedef QueueProgressCallback =
@@ -196,6 +202,18 @@ class PreciseIndexer {
         continue;
       }
 
+      final lease = await HeavyAiCoordinator.instance.acquire(
+        task: 'content-$mode',
+        // Foreground work may wait briefly for a background face/content slice
+        // to finish. Background workers never wait; they yield and reschedule.
+        wait: mode != 'background',
+      );
+      if (lease == null) {
+        pausedReason = 'محرك ذكاء آخر يعمل الآن؛ سيتم المتابعة تلقائيًا.';
+        await _database.releaseQueueAssets(ids.skip(position));
+        break;
+      }
+
       try {
         await _indexAsset(
           asset,
@@ -217,6 +235,8 @@ class PreciseIndexer {
         failed++;
         await _database.markQueueFailed(asset.id, error);
         debugPrint('PixMind index error for ${asset.id}: $error\n$stackTrace');
+      } finally {
+        await lease.release();
       }
 
       onProgress(
@@ -227,12 +247,14 @@ class PreciseIndexer {
           assetName: asset.title,
         ),
       );
-      // A breather so the UI stays responsive. Kept only for background work:
-      // in the foreground 90ms per photo added up to over two hours of pure
-      // sleeping across a library this size.
-      if (mode == 'background') {
-        await Future<void>.delayed(const Duration(milliseconds: 90));
-      }
+      // Yield between photos so Flutter can render input/scroll frames. The
+      // foreground pause is intentionally tiny: 12ms adds only ~12 seconds per
+      // 1000 photos, while avoiding a long uninterrupted chain of heavy work.
+      await Future<void>.delayed(
+        mode == 'background'
+            ? const Duration(milliseconds: 90)
+            : const Duration(milliseconds: 12),
+      );
     }
 
     // Face recognition is temporarily decoupled from the heavy AI index.
@@ -285,7 +307,7 @@ class PreciseIndexer {
     if (thumbnail != null) {
       if (yoloReady)
         objects = await ObjectDetectionService.instance.detect(thumbnail);
-      colors = ColorService.dominantColors(thumbnail);
+      colors = await compute(_dominantColorsInIsolate, thumbnail);
     }
 
     await waitWhilePaused();

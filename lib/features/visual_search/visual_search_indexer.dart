@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../data/repositories/media_repository.dart';
+import '../../services/ai/heavy_ai_coordinator.dart';
 import 'visual_embedding_service.dart';
 import 'visual_search_repository.dart';
 
@@ -68,20 +69,30 @@ final class VisualSearchIndexer {
       return stored;
     }
 
-    final thumbnail = await asset.thumbnailDataWithSize(
-      const ThumbnailSize(512, 512),
-      quality: 95,
+    final lease = await HeavyAiCoordinator.instance.acquire(
+      task: 'visual-foreground',
+      wait: true,
     );
-
-    if (thumbnail == null || thumbnail.isEmpty) {
-      throw StateError('تعذر إنشاء صورة مصغرة لـ ${asset.title ?? asset.id}.');
+    if (lease == null) {
+      throw StateError('محرك ذكاء آخر يعمل الآن. أعد المحاولة بعد لحظات.');
     }
 
-    final embedding = await _embeddingService.generateEmbedding(thumbnail);
+    try {
+      final thumbnail = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(512, 512),
+        quality: 95,
+      );
 
-    await _repository.saveEmbedding(assetId: asset.id, embedding: embedding);
+      if (thumbnail == null || thumbnail.isEmpty) {
+        throw StateError('تعذر إنشاء صورة مصغرة لـ ${asset.title ?? asset.id}.');
+      }
 
-    return embedding;
+      final embedding = await _embeddingService.generateEmbedding(thumbnail);
+      await _repository.saveEmbedding(assetId: asset.id, embedding: embedding);
+      return embedding;
+    } finally {
+      await lease.release();
+    }
   }
 
   Future<VisualIndexSummary> indexAllMissing({
@@ -165,7 +176,7 @@ final class VisualSearchIndexer {
           ),
         );
 
-        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(const Duration(milliseconds: 12));
       }
 
       if (cancelled || assets.length < _pageSize) {

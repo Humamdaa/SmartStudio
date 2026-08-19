@@ -5,23 +5,53 @@ import 'package:workmanager/workmanager.dart';
 
 import '../../data/database/db_helper.dart';
 import '../../data/prefs/app_prefs.dart';
+import 'face_index_service.dart';
 import 'precise_indexer.dart';
 
-const _backgroundTaskName = 'pixmind.private.index.slice';
-const _periodicUniqueName = 'pixmind.private.index.periodic';
-const _backgroundTag = 'pixmind.private.index';
+const _contentTaskName = 'pixmind.private.index.slice';
+const _contentPeriodicUniqueName = 'pixmind.private.index.periodic';
+const _contentTag = 'pixmind.private.index';
+
+const _faceTaskName = 'pixmind.private.face.slice';
+const _facePeriodicUniqueName = 'pixmind.private.face.periodic';
+const _faceTag = 'pixmind.private.face';
 
 @pragma('vm:entry-point')
 void pixMindCallbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    if (taskName == _faceTaskName) {
+      try {
+        if (!await AppPrefs.instance.backgroundFaceIndexingEnabled) return true;
+        final result = await FaceIndexService.instance.processBackgroundSlice(
+          maxPhotos: 4,
+        );
+        await Workmanager().reportProgress({
+          'processed': result.processed,
+          'failed': result.failed,
+          'busy': result.busy ? 1 : 0,
+        });
+        if ((result.hasMore || result.busy) &&
+            await AppPrefs.instance.backgroundFaceIndexingEnabled) {
+          await BackgroundIndexService.instance.scheduleNextFaceSlice(
+            initialDelay: result.busy
+                ? const Duration(minutes: 3)
+                : const Duration(minutes: 2),
+          );
+        }
+        return true;
+      } catch (_) {
+        // WorkManager's exponential retry plus Face v3's persistent face_scans
+        // resume state makes an interrupted slice safe to retry.
+        return false;
+      }
+    }
+
+    // Default/background content task: YOLO + scene + OCR + named colors.
     try {
       if (!await AppPrefs.instance.backgroundIndexingEnabled) return true;
       final indexer = PreciseIndexer();
-      // Walks newest -> oldest across the whole library, so successive wake-ups
-      // keep making progress. The old call enqueued only the newest 500 photos
-      // every time, so once those were indexed the queue stayed empty for good
-      // and the rest of the library was never reached.
       await indexer.enqueueNextUnindexed(limit: 200);
       final result = await indexer.processQueueBatch(
         batchSize: 12,
@@ -37,17 +67,19 @@ void pixMindCallbackDispatcher() {
       });
       if (result.pending > 0 &&
           await AppPrefs.instance.backgroundIndexingEnabled) {
-        await BackgroundIndexService.instance.scheduleNextSlice();
+        await BackgroundIndexService.instance.scheduleNextContentSlice();
       }
       return true;
     } catch (_) {
-      // WorkManager retries with exponential backoff. The persistent queue
-      // also releases stale claimed rows after an interrupted worker.
       return false;
     }
   });
 }
 
+/// Android persistent background scheduler for the two heavy queues.
+///
+/// Content and Face use separate switches/tags, while the SQLite heavy-AI
+/// lease prevents them from actually competing for CPU at the same time.
 class BackgroundIndexService {
   BackgroundIndexService._();
   static final BackgroundIndexService instance = BackgroundIndexService._();
@@ -64,8 +96,12 @@ class BackgroundIndexService {
     if (_initialized || !Platform.isAndroid) return;
     await Workmanager().initialize(pixMindCallbackDispatcher);
     _initialized = true;
+
     if (await AppPrefs.instance.backgroundIndexingEnabled) {
-      await ensureScheduled();
+      await ensureContentScheduled();
+    }
+    if (await AppPrefs.instance.backgroundFaceIndexingEnabled) {
+      await ensureFaceScheduled();
     }
   }
 
@@ -74,28 +110,59 @@ class BackgroundIndexService {
     if (!Platform.isAndroid) return;
     if (!_initialized) await initialize();
     if (enabled) {
-      await ensureScheduled();
+      await ensureContentScheduled();
     } else {
-      await Workmanager().cancelByTag(_backgroundTag);
+      await Workmanager().cancelByTag(_contentTag);
     }
   }
 
-  Future<void> ensureScheduled() async {
+  Future<void> setFaceEnabled(bool enabled) async {
+    await AppPrefs.instance.setBackgroundFaceIndexingEnabled(enabled);
+    if (!Platform.isAndroid) return;
+    if (!_initialized) await initialize();
+    if (enabled) {
+      await ensureFaceScheduled();
+    } else {
+      await Workmanager().cancelByTag(_faceTag);
+    }
+  }
+
+  Future<void> ensureContentScheduled() async {
     if (!Platform.isAndroid) return;
     await Workmanager().registerPeriodicTask(
-      _periodicUniqueName,
-      _backgroundTaskName,
+      _contentPeriodicUniqueName,
+      _contentTaskName,
       frequency: const Duration(hours: 6),
       constraints: _constraints,
       existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
       backoffPolicy: BackoffPolicy.exponential,
       backoffPolicyDelay: const Duration(minutes: 10),
-      tag: _backgroundTag,
+      tag: _contentTag,
     );
-    await scheduleNextSlice(initialDelay: const Duration(seconds: 10));
+    await scheduleNextContentSlice(initialDelay: const Duration(seconds: 10));
   }
 
+  Future<void> ensureFaceScheduled() async {
+    if (!Platform.isAndroid) return;
+    await Workmanager().registerPeriodicTask(
+      _facePeriodicUniqueName,
+      _faceTaskName,
+      frequency: const Duration(hours: 6),
+      constraints: _constraints,
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 10),
+      tag: _faceTag,
+    );
+    await scheduleNextFaceSlice(initialDelay: const Duration(seconds: 20));
+  }
+
+  // Kept for existing callers from v2.3.5.
   Future<void> scheduleNextSlice({
+    Duration initialDelay = const Duration(minutes: 1),
+  }) => scheduleNextContentSlice(initialDelay: initialDelay);
+
+  Future<void> scheduleNextContentSlice({
     Duration initialDelay = const Duration(minutes: 1),
   }) async {
     if (!Platform.isAndroid) return;
@@ -105,13 +172,32 @@ class BackgroundIndexService {
         'pixmind.private.index.once.${DateTime.now().millisecondsSinceEpoch}';
     await Workmanager().registerOneOffTask(
       uniqueName,
-      _backgroundTaskName,
+      _contentTaskName,
       initialDelay: initialDelay,
       constraints: _constraints,
       existingWorkPolicy: ExistingWorkPolicy.keep,
       backoffPolicy: BackoffPolicy.exponential,
       backoffPolicyDelay: const Duration(minutes: 10),
-      tag: _backgroundTag,
+      tag: _contentTag,
+    );
+  }
+
+  Future<void> scheduleNextFaceSlice({
+    Duration initialDelay = const Duration(minutes: 2),
+  }) async {
+    if (!Platform.isAndroid) return;
+    if (!await AppPrefs.instance.backgroundFaceIndexingEnabled) return;
+    final uniqueName =
+        'pixmind.private.face.once.${DateTime.now().millisecondsSinceEpoch}';
+    await Workmanager().registerOneOffTask(
+      uniqueName,
+      _faceTaskName,
+      initialDelay: initialDelay,
+      constraints: _constraints,
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+      backoffPolicy: BackoffPolicy.exponential,
+      backoffPolicyDelay: const Duration(minutes: 10),
+      tag: _faceTag,
     );
   }
 }

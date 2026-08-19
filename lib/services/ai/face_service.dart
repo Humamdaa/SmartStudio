@@ -74,6 +74,7 @@ class FaceService {
   );
 
   Interpreter? _interpreter;
+  IsolateInterpreter? _isolateInterpreter;
   Future<void> _analysisTail = Future<void>.value();
   String? lastError;
 
@@ -83,6 +84,18 @@ class FaceService {
     final options = InterpreterOptions()..threads = 2;
     final loaded = await Interpreter.fromAsset(_modelAsset, options: options);
     _interpreter = loaded;
+    return loaded;
+  }
+
+  Future<IsolateInterpreter> _getIsolateInterpreter() async {
+    final current = _isolateInterpreter;
+    if (current != null) return current;
+    final interpreter = await _getInterpreter();
+    final loaded = await IsolateInterpreter.create(
+      address: interpreter.address,
+      debugName: 'PixMindMobileFaceNet',
+    );
+    _isolateInterpreter = loaded;
     return loaded;
   }
 
@@ -457,7 +470,12 @@ class FaceService {
     final shape = interpreter.getOutputTensor(0).shape;
     final dimensions = shape.isEmpty ? 192 : shape.last;
     final output = [List<double>.filled(dimensions, 0)];
-    interpreter.run(input, output);
+    // TFLite's IsolateInterpreter keeps MobileFaceNet inference away from the
+    // Flutter UI isolate. Face alignment stays identical, so recognition
+    // quality/thresholds are unchanged while scrolling and taps remain much
+    // more responsive during Face Lab.
+    final isolateInterpreter = await _getIsolateInterpreter();
+    await isolateInterpreter.run(input, output);
 
     final yaw = (face.headEulerAngleY ?? 0.0).abs();
     final poseScore = (1.0 - ((yaw / 55.0) * 0.60 + (roll.abs() / 45.0) * 0.40))
