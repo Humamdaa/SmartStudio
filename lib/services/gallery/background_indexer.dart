@@ -48,7 +48,7 @@ void pixMindCallbackDispatcher() {
       }
     }
 
-    // Default/background content task: YOLO + scene + OCR + named colors.
+    // Default/background content task: YOLO + scene + named colors + metadata. OCR is separate.
     try {
       if (!await AppPrefs.instance.backgroundIndexingEnabled) return true;
       final indexer = PreciseIndexer();

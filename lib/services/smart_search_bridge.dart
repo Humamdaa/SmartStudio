@@ -156,8 +156,6 @@ class SmartSearchBridge {
         respectDeviceHealth: true,
         mode: 'foreground',
         minPriority: priority,
-        // A manual small batch should be deterministic for OCR testing.
-        forceArabicOcr: true,
       );
       processed += batch.processed;
       failed += batch.failed;
@@ -205,10 +203,6 @@ class SmartSearchBridge {
         respectDeviceHealth: true,
         mode: 'foreground',
         minPriority: priority,
-        // The user explicitly asked to refresh these 20 photos. If Arabic OCR
-        // is enabled, run it deterministically here instead of relying on the
-        // lightweight text-heavy heuristic used by full/background indexing.
-        forceArabicOcr: true,
       );
       processed += batch.processed;
       failed += batch.failed;

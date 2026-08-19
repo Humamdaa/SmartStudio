@@ -22,6 +22,8 @@ import 'package:photo_manager/photo_manager.dart';
 import '../../data/models/media_item.dart';
 import '../../data/repositories/media_repository.dart';
 import '../../features/visual_search/similar_images_screen.dart';
+import '../../features/albums/indexing_providers.dart';
+import '../../services/gallery/complete_smart_index_service.dart';
 
 class AppRoutes {
   static const splash = '/';
@@ -157,65 +159,154 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     AppRoutes.suggestions,
   ];
 
+  String _smartIndexStageLabel(CompleteSmartIndexStage stage) {
+    return switch (stage) {
+      CompleteSmartIndexStage.gallery => 'Gallery analysis',
+      CompleteSmartIndexStage.content => 'Content understanding',
+      CompleteSmartIndexStage.ocr => 'Text recognition',
+      CompleteSmartIndexStage.people => 'People',
+      CompleteSmartIndexStage.visual => 'Visual search',
+      CompleteSmartIndexStage.complete => 'Complete',
+      CompleteSmartIndexStage.stopped => 'Stopped',
+      CompleteSmartIndexStage.error => 'Needs attention',
+      _ => 'Preparing',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     // نخفي شريط التنقّل وقت التحديد المتعدد حتى ما يصير بارين فوق بعض.
     final selecting = ref.watch(selectionProvider).active;
     final routeIndex = _tabs.indexOf(widget.location);
     final selectedIndex = routeIndex < 0 ? 0 : routeIndex;
+    final smartIndex = ref.watch(completeSmartIndexServiceProvider);
+
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: selecting
           ? null
-          : NavigationBar(
-              selectedIndex: selectedIndex,
-              height: 64,
-              backgroundColor: Colors.white,
-              surfaceTintColor: Colors.white,
-              indicatorColor: AppColors.mintAccent.withOpacity(0.22),
-              labelBehavior:
-                  NavigationDestinationLabelBehavior.onlyShowSelected,
-              onDestinationSelected: (i) {
-                if (i != selectedIndex) context.go(_tabs[i]);
-              },
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.home_outlined,
-                    color: AppColors.textSecondary,
-                  ),
-                  selectedIcon: Icon(Icons.home, color: AppColors.navyDeep),
-                  label: 'Home',
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ValueListenableBuilder<CompleteSmartIndexState>(
+                  valueListenable: smartIndex.progress,
+                  builder: (context, state, _) {
+                    if (!state.running) return const SizedBox.shrink();
+                    final percent =
+                        (state.overallFraction.clamp(0.0, 1.0) * 100).round();
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 7),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                          top: BorderSide(color: Color(0xFFE7E9EE)),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.auto_awesome_rounded,
+                                size: 16,
+                                color: AppColors.mintAccent,
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: Text(
+                                  'Smart Index • ${_smartIndexStageLabel(state.stage)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '$percent%',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          LinearProgressIndicator(
+                            value: state.overallFraction.clamp(0.0, 1.0),
+                            minHeight: 3,
+                            color: AppColors.navyDeep,
+                            backgroundColor: const Color(0xFFEFF1F4),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Indexing continues while you browse other tabs.',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 9.8,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.search_outlined,
-                    color: AppColors.textSecondary,
-                  ),
-                  selectedIcon: Icon(Icons.search, color: AppColors.navyDeep),
-                  label: 'Search',
-                ),
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.photo_album_outlined,
-                    color: AppColors.textSecondary,
-                  ),
-                  selectedIcon: Icon(
-                    Icons.photo_album,
-                    color: AppColors.navyDeep,
-                  ),
-                  label: 'Albums',
-                ),
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.auto_awesome_outlined,
-                    color: AppColors.textSecondary,
-                  ),
-                  selectedIcon: Icon(
-                    Icons.auto_awesome,
-                    color: AppColors.navyDeep,
-                  ),
-                  label: 'For You',
+                NavigationBar(
+                  selectedIndex: selectedIndex,
+                  height: 64,
+                  backgroundColor: Colors.white,
+                  surfaceTintColor: Colors.white,
+                  indicatorColor: AppColors.mintAccent.withOpacity(0.22),
+                  labelBehavior:
+                      NavigationDestinationLabelBehavior.onlyShowSelected,
+                  onDestinationSelected: (i) {
+                    if (i != selectedIndex) context.go(_tabs[i]);
+                  },
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(
+                        Icons.home_outlined,
+                        color: AppColors.textSecondary,
+                      ),
+                      selectedIcon: Icon(Icons.home, color: AppColors.navyDeep),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(
+                        Icons.search_outlined,
+                        color: AppColors.textSecondary,
+                      ),
+                      selectedIcon: Icon(Icons.search, color: AppColors.navyDeep),
+                      label: 'Search',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(
+                        Icons.photo_album_outlined,
+                        color: AppColors.textSecondary,
+                      ),
+                      selectedIcon: Icon(
+                        Icons.photo_album,
+                        color: AppColors.navyDeep,
+                      ),
+                      label: 'Albums',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(
+                        Icons.auto_awesome_outlined,
+                        color: AppColors.textSecondary,
+                      ),
+                      selectedIcon: Icon(
+                        Icons.auto_awesome,
+                        color: AppColors.navyDeep,
+                      ),
+                      label: 'For You',
+                    ),
+                  ],
                 ),
               ],
             ),

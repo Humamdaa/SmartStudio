@@ -5,12 +5,10 @@ import 'package:photo_manager/photo_manager.dart';
 
 import '../../data/database/db_helper.dart';
 import '../../data/models/search_index_entry.dart';
-import '../../data/prefs/app_prefs.dart';
 import '../../data/repositories/media_repository.dart';
 import '../../data/repositories/precise_search_repository.dart';
 import '../ai/color_service.dart';
 import '../ai/object_detection_service.dart';
-import '../ai/ocr_service.dart';
 import '../ai/scene_label_service.dart';
 import '../device/device_health_service.dart';
 import '../ai/heavy_ai_coordinator.dart';
@@ -140,7 +138,6 @@ class PreciseIndexer {
     bool respectDeviceHealth = true,
     String mode = 'foreground',
     int? minPriority,
-    bool forceArabicOcr = false,
   }) async {
     final detector = ObjectDetectionService.instance;
     onProgress(
@@ -223,7 +220,6 @@ class PreciseIndexer {
           onProgress: onProgress,
           shouldCancel: shouldCancel,
           waitWhilePaused: waitWhilePaused,
-          forceArabicOcr: forceArabicOcr,
         );
         await _database.markQueueDone(asset.id);
         processed++;
@@ -259,7 +255,7 @@ class PreciseIndexer {
 
     // Face recognition is temporarily decoupled from the heavy AI index.
     // People -> Face Lab can rebuild faces independently without rerunning
-    // YOLO/scene/OCR, which makes calibration much faster and safer.
+    // YOLO/scene/content, which makes calibration much faster and safer.
 
     final pending = await _database.getPendingQueueCount();
     await _database.finishIndexRun(
@@ -288,7 +284,6 @@ class PreciseIndexer {
     required IndexProgressCallback onProgress,
     required IndexCancellationCheck shouldCancel,
     required IndexPauseWaiter waitWhilePaused,
-    required bool forceArabicOcr,
   }) async {
     onProgress(
       IndexProgress(
@@ -314,7 +309,6 @@ class PreciseIndexer {
     if (shouldCancel()) throw const _GracefulIndexInterruption();
 
     var scenes = const <String>[];
-    var ocr = OcrExtraction.empty;
     var people = const <String>[];
     var faceCount = 0;
     final file = await asset.file;
@@ -323,64 +317,25 @@ class PreciseIndexer {
         IndexProgress(
           processed: processed,
           total: total,
-          phase: 'فهم المشهد وقراءة النص…',
+          phase: 'فهم المشهد وتجهيز بيانات المحتوى…',
           assetName: asset.title,
         ),
       );
       scenes = await SceneLabelService.instance.labelImage(file.path);
-      final arabicEnabled = await AppPrefs.instance.arabicOcrEnabled;
-      ocr = await OcrService.instance.extractCombinedText(
-        file.path,
-        arabic: !arabicEnabled
-            ? ArabicOcrMode.off
-            : forceArabicOcr
-            ? ArabicOcrMode.force
-            : ArabicOcrMode.auto,
-      );
 
       await waitWhilePaused();
       if (shouldCancel()) throw const _GracefulIndexInterruption();
 
-      // Face v3 is intentionally isolated while we calibrate recognition.
-      // Reuse any existing face summary, but do not run ML Kit/MobileFaceNet
-      // from Index next 20 / Index all. People -> Face Lab owns that stage.
+      // Face v3 remains independent. Reuse an existing People summary without
+      // running face detection/embeddings from the fast Content stage.
       faceCount = await _database.getFaceScanCount(asset.id);
       people = (await _database.getPeopleForAsset(asset.id))
           .map((person) => person.name)
           .toList(growable: false);
-
-      final metadata = _metadataFor(
-        asset,
-        hasText: ocr.text.trim().isNotEmpty,
-        scenes: scenes,
-      );
-      await _searchRepository.save(
-        SearchIndexEntry(
-          assetId: asset.id,
-          title: asset.title ?? '',
-          takenAt: asset.createDateTime,
-          width: asset.width,
-          height: asset.height,
-          objects: objects,
-          scenes: scenes,
-          colors: colors,
-          ocrText: ocr.text,
-          ocrScripts: ocr.scripts,
-          metadata: metadata,
-          people: people,
-          faceCount: faceCount,
-          indexedAt: DateTime.now(),
-        ),
-      );
-      return;
     }
 
-    final metadata = _metadataFor(
-      asset,
-      hasText: ocr.text.trim().isNotEmpty,
-      scenes: scenes,
-    );
-    await _searchRepository.save(
+    final metadata = _metadataFor(asset, scenes: scenes);
+    await _searchRepository.saveContent(
       SearchIndexEntry(
         assetId: asset.id,
         title: asset.title ?? '',
@@ -390,8 +345,10 @@ class PreciseIndexer {
         objects: objects,
         scenes: scenes,
         colors: colors,
-        ocrText: ocr.text,
-        ocrScripts: ocr.scripts,
+        // OCR is intentionally a separate resumable stage in v2.3.8.
+        // saveContent() preserves any text that was already recognized.
+        ocrText: '',
+        ocrScripts: const [],
         metadata: metadata,
         people: people,
         faceCount: faceCount,
@@ -402,7 +359,6 @@ class PreciseIndexer {
 
   String _metadataFor(
     AssetEntity asset, {
-    required bool hasText,
     required List<String> scenes,
   }) {
     const months = [
@@ -426,7 +382,6 @@ class PreciseIndexer {
     final screenshot = (asset.title ?? '').toLowerCase().contains('screenshot')
         ? 'screenshot screen لقطة شاشة سكرينشوت'
         : '';
-    final textHint = hasText ? 'text document كتابة نص مستند وثيقة' : '';
     final sceneText = scenes.join(' ').toLowerCase();
     final documentHint =
         sceneText.contains('receipt') ||
@@ -444,7 +399,6 @@ class PreciseIndexer {
       '${date.year}-$numericMonth-$day',
       orientation,
       screenshot,
-      textHint,
       documentHint,
       '${asset.width}x${asset.height}',
     ].join(' ');

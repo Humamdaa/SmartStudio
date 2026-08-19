@@ -65,7 +65,7 @@ class SearchIndexEntry {
       'searchable_text': searchableText,
       'indexed_at': indexedAt.millisecondsSinceEpoch,
       'model_version':
-          'presentation-v2.0.2:yolo11n+mlkit+tesseract-ara-script+mobilefacenet-qguard',
+          'content-v2.3.8:yolo11n+mlkit-scene+named-colors+metadata',
     };
   }
 

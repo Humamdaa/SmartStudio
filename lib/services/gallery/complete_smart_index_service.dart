@@ -12,11 +12,13 @@ import '../ai/face_service.dart';
 import '../indexing_service.dart';
 import '../smart_search_bridge.dart';
 import 'face_index_service.dart';
+import 'ocr_index_service.dart';
 
 enum CompleteSmartIndexStage {
   idle,
   gallery,
   content,
+  ocr,
   people,
   visual,
   complete,
@@ -30,6 +32,7 @@ class CompleteSmartIndexSnapshot {
     required this.total,
     required this.galleryAnalyzed,
     required this.contentIndexed,
+    required this.ocrIndexed,
     required this.peopleIndexed,
     required this.visualIndexed,
     required this.arabicOcrEnabled,
@@ -39,6 +42,7 @@ class CompleteSmartIndexSnapshot {
       : total = 0,
         galleryAnalyzed = 0,
         contentIndexed = 0,
+        ocrIndexed = 0,
         peopleIndexed = 0,
         visualIndexed = 0,
         arabicOcrEnabled = true;
@@ -46,6 +50,7 @@ class CompleteSmartIndexSnapshot {
   final int total;
   final int galleryAnalyzed;
   final int contentIndexed;
+  final int ocrIndexed;
   final int peopleIndexed;
   final int visualIndexed;
   final bool arabicOcrEnabled;
@@ -54,11 +59,13 @@ class CompleteSmartIndexSnapshot {
 
   int get safeGalleryAnalyzed => _safe(galleryAnalyzed);
   int get safeContentIndexed => _safe(contentIndexed);
+  int get safeOcrIndexed => _safe(ocrIndexed);
   int get safePeopleIndexed => _safe(peopleIndexed);
   int get safeVisualIndexed => _safe(visualIndexed);
 
   bool get galleryComplete => total > 0 && safeGalleryAnalyzed >= total;
   bool get contentComplete => total > 0 && safeContentIndexed >= total;
+  bool get ocrComplete => total > 0 && safeOcrIndexed >= total;
   bool get peopleComplete => total > 0 && safePeopleIndexed >= total;
   bool get visualComplete => total > 0 && safeVisualIndexed >= total;
 
@@ -66,6 +73,7 @@ class CompleteSmartIndexSnapshot {
       total > 0 &&
       galleryComplete &&
       contentComplete &&
+      ocrComplete &&
       peopleComplete &&
       visualComplete;
 
@@ -73,15 +81,17 @@ class CompleteSmartIndexSnapshot {
     if (total <= 0) return 0;
     final done = safeGalleryAnalyzed +
         safeContentIndexed +
+        safeOcrIndexed +
         safePeopleIndexed +
         safeVisualIndexed;
-    return (done / (total * 4)).clamp(0.0, 1.0).toDouble();
+    return (done / (total * 5)).clamp(0.0, 1.0).toDouble();
   }
 
   CompleteSmartIndexSnapshot copyWith({
     int? total,
     int? galleryAnalyzed,
     int? contentIndexed,
+    int? ocrIndexed,
     int? peopleIndexed,
     int? visualIndexed,
     bool? arabicOcrEnabled,
@@ -90,6 +100,7 @@ class CompleteSmartIndexSnapshot {
       total: total ?? this.total,
       galleryAnalyzed: galleryAnalyzed ?? this.galleryAnalyzed,
       contentIndexed: contentIndexed ?? this.contentIndexed,
+      ocrIndexed: ocrIndexed ?? this.ocrIndexed,
       peopleIndexed: peopleIndexed ?? this.peopleIndexed,
       visualIndexed: visualIndexed ?? this.visualIndexed,
       arabicOcrEnabled: arabicOcrEnabled ?? this.arabicOcrEnabled,
@@ -145,6 +156,7 @@ class CompleteSmartIndexState {
     final persistedCurrentStage = switch (stage) {
       CompleteSmartIndexStage.gallery => snapshot.safeGalleryAnalyzed,
       CompleteSmartIndexStage.content => snapshot.safeContentIndexed,
+      CompleteSmartIndexStage.ocr => snapshot.safeOcrIndexed,
       CompleteSmartIndexStage.people => snapshot.safePeopleIndexed,
       CompleteSmartIndexStage.visual => snapshot.safeVisualIndexed,
       _ => -1,
@@ -153,6 +165,7 @@ class CompleteSmartIndexState {
 
     final persistedDone = snapshot.safeGalleryAnalyzed +
         snapshot.safeContentIndexed +
+        snapshot.safeOcrIndexed +
         snapshot.safePeopleIndexed +
         snapshot.safeVisualIndexed;
     final liveCurrentStage =
@@ -162,7 +175,7 @@ class CompleteSmartIndexState {
         (liveCurrentStage > persistedCurrentStage
             ? liveCurrentStage
             : persistedCurrentStage);
-    return (done / (snapshot.total * 4)).clamp(base, 1.0).toDouble();
+    return (done / (snapshot.total * 5)).clamp(base, 1.0).toDouble();
   }
 }
 
@@ -172,9 +185,10 @@ class CompleteSmartIndexState {
 /// stage delegates to the existing resumable index that owns that data:
 ///
 /// 1) lightweight ObjectBox gallery analysis
-/// 2) content + text index (YOLO/scene/named colors/OCR/metadata)
-/// 3) Face v3 / People
-/// 4) visual embeddings
+/// 2) fast Content index (YOLO/scene/named colors/metadata)
+/// 3) independent Text Recognition (English + optional Arabic OCR)
+/// 4) Face v3 / People
+/// 5) visual embeddings
 ///
 /// Re-running this service therefore means "continue what is missing", not
 /// "start the library from zero".
@@ -187,13 +201,15 @@ class CompleteSmartIndexService {
     MediaRepository? mediaRepository,
     DatabaseHelper? database,
     FaceIndexService? faceIndexer,
+    OcrIndexService? ocrIndexer,
   })  : _galleryIndexer = galleryIndexer,
         _contentBridge = contentBridge,
         _visualIndexer = visualIndexer,
         _visualRepository = visualRepository,
         _mediaRepository = mediaRepository ?? MediaRepository(),
         _database = database ?? DatabaseHelper.instance,
-        _faceIndexer = faceIndexer ?? FaceIndexService.instance;
+        _faceIndexer = faceIndexer ?? FaceIndexService.instance,
+        _ocrIndexer = ocrIndexer ?? OcrIndexService.instance;
 
   final IndexingService _galleryIndexer;
   final SmartSearchBridge _contentBridge;
@@ -202,6 +218,7 @@ class CompleteSmartIndexService {
   final MediaRepository _mediaRepository;
   final DatabaseHelper _database;
   final FaceIndexService _faceIndexer;
+  final OcrIndexService _ocrIndexer;
 
   final ValueNotifier<CompleteSmartIndexState> progress =
       ValueNotifier<CompleteSmartIndexState>(
@@ -215,16 +232,18 @@ class CompleteSmartIndexService {
   Future<CompleteSmartIndexSnapshot> refresh() async {
     final total = await _mediaRepository.getTotalCount(RequestType.image);
     final content = await _database.getPresentationIndexedCount();
+    final arabic = await AppPrefs.instance.arabicOcrEnabled;
+    final ocr = await _database.getOcrIndexedCount(arabicRequired: arabic);
     final people = await _database.getCompletedFaceScanCount(
       FaceService.facePipelineVersion,
     );
     final visual = await _visualRepository.countIndexedImages();
-    final arabic = await AppPrefs.instance.arabicOcrEnabled;
 
     final snapshot = CompleteSmartIndexSnapshot(
       total: total,
       galleryAnalyzed: _galleryIndexer.analyzedCount,
       contentIndexed: content,
+      ocrIndexed: ocr,
       peopleIndexed: people,
       visualIndexed: visual,
       arabicOcrEnabled: arabic,
@@ -280,6 +299,7 @@ class CompleteSmartIndexService {
     if (!isRunning) return;
     _cancelRequested = true;
     _galleryIndexer.cancel();
+    _ocrIndexer.stop();
     _faceIndexer.stop();
     progress.value = progress.value.copyWith(
       status: 'Stopping safely after the current image…',
@@ -295,6 +315,12 @@ class CompleteSmartIndexService {
       }
 
       await _runContentStage();
+      if (_cancelRequested) {
+        await _finishStopped();
+        return;
+      }
+
+      await _runOcrStage();
       if (_cancelRequested) {
         await _finishStopped();
         return;
@@ -392,9 +418,7 @@ class CompleteSmartIndexService {
       running: true,
       stage: CompleteSmartIndexStage.content,
       snapshot: snapshot,
-      status: snapshot.arabicOcrEnabled
-          ? 'Content & text: YOLO, scene, colors, English + Arabic OCR and metadata…'
-          : 'Content & text: YOLO, scene, colors, English OCR and metadata; Arabic OCR is off.',
+      status: 'Content: YOLO, scene, named colors and metadata — OCR runs next as a separate stage…',
       stageFraction: snapshot.total <= 0
           ? 0
           : snapshot.safeContentIndexed / snapshot.total,
@@ -409,7 +433,7 @@ class CompleteSmartIndexService {
           return;
         }
         progress.value = progress.value.copyWith(
-          status: 'Content & text: checking library queue ${p.discovered}/${p.total}…',
+          status: 'Content: checking library queue ${p.discovered}/${p.total}…',
         );
       },
       onProgress: (p) {
@@ -426,8 +450,8 @@ class CompleteSmartIndexService {
         progress.value = progress.value.copyWith(
           stageFraction: fraction,
           status: p.assetName == null
-              ? 'Content & text: ${p.phase}'
-              : 'Content & text: ${p.phase}\n${p.assetName}',
+              ? 'Content: ${p.phase}'
+              : 'Content: ${p.phase}\n${p.assetName}',
         );
       },
     );
@@ -439,7 +463,7 @@ class CompleteSmartIndexService {
           ? 1
           : snapshot.safeContentIndexed / snapshot.total,
       status: result.pausedReason ??
-          'Content & text ready: ${snapshot.safeContentIndexed}/${snapshot.total}; ${result.failed} failed in this pass.',
+          'Content ready: ${snapshot.safeContentIndexed}/${snapshot.total}; ${result.failed} failed in this pass. Text Recognition can continue independently.',
     );
 
     // A thermal/device-health pause is a signal to stop the entire heavy
@@ -447,6 +471,56 @@ class CompleteSmartIndexService {
     if (result.pausedReason != null) {
       _cancelRequested = true;
     }
+  }
+
+  Future<void> _runOcrStage() async {
+    var snapshot = await refresh();
+    if (snapshot.ocrComplete || _cancelRequested) return;
+
+    final startingCount = snapshot.safeOcrIndexed;
+    progress.value = progress.value.copyWith(
+      running: true,
+      stage: CompleteSmartIndexStage.ocr,
+      snapshot: snapshot,
+      status: snapshot.arabicOcrEnabled
+          ? 'Text Recognition: English OCR first, Arabic OCR when needed…'
+          : 'Text Recognition: English OCR only; Arabic OCR is disabled.',
+      stageFraction: snapshot.total <= 0 ? 0 : startingCount / snapshot.total,
+    );
+
+    void listener() {
+      final p = _ocrIndexer.progress.value;
+      if (!progress.value.running ||
+          progress.value.stage != CompleteSmartIndexStage.ocr) {
+        return;
+      }
+      final total = progress.value.snapshot.total;
+      final liveCount = (startingCount + p.processed).clamp(0, total).toInt();
+      progress.value = progress.value.copyWith(
+        snapshot: progress.value.snapshot.copyWith(ocrIndexed: liveCount),
+        stageFraction: total <= 0 ? null : liveCount / total,
+        status: p.status,
+      );
+    }
+
+    _ocrIndexer.progress.addListener(listener);
+    try {
+      if (!_ocrIndexer.isRunning) {
+        await _ocrIndexer.start(limit: null);
+      }
+      while (_ocrIndexer.isRunning && !_cancelRequested) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+      }
+    } finally {
+      _ocrIndexer.progress.removeListener(listener);
+    }
+
+    snapshot = await refresh();
+    progress.value = progress.value.copyWith(
+      snapshot: snapshot,
+      stageFraction: snapshot.total <= 0 ? 1 : snapshot.safeOcrIndexed / snapshot.total,
+      status: 'Text Recognition ready: ${snapshot.safeOcrIndexed}/${snapshot.total}.',
+    );
   }
 
   Future<void> _runPeopleStage() async {
